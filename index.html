@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Rental Underwriter</title>
+<style>
+  :root{
+    --ink:#14181F; --rule:#D8DEE7; --surface:#F2F4F7; --navy:#2B4C7E;
+    --pass:#0F6E4A; --warn:#A96A00; --fail:#A32222; --muted:#5B6675; --faint:#8A94A3;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--surface); color:var(--ink);
+    font-family:'Inter','Helvetica Neue',system-ui,-apple-system,sans-serif;
+    font-size:14px; line-height:1.45;
+  }
+  .num{font-variant-numeric:tabular-nums;}
+  .wrap{max-width:1120px; margin:0 auto; padding:0 20px;}
+
+  /* verdict */
+  #verdictBar{padding:20px 0; color:#fff;}
+  #verdictBar.go{background:var(--pass);} #verdictBar.nogo{background:var(--fail);}
+  .vTop{display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 34px;}
+  .vLabel{font-size:11px; opacity:.8; margin-bottom:4px;}
+  .vBig{font-size:40px; line-height:1; font-weight:700; letter-spacing:-.02em;}
+  .vGates{display:flex; flex-wrap:wrap; gap:8px 28px; font-size:13px; font-variant-numeric:tabular-nums;}
+  .vGates .dim{opacity:.7;}
+  .vNote{margin-top:12px; font-size:13px; opacity:.95;}
+
+  /* stats */
+  .stats{display:grid; grid-template-columns:repeat(5,1fr); background:#fff;
+    border:1px solid var(--rule); border-radius:2px; margin:24px 0;}
+  .stat{padding:12px 16px; border-right:1px solid var(--rule);}
+  .stat:last-child{border-right:none;}
+  .stat .l{font-size:11px; color:var(--muted); margin-bottom:4px;}
+  .stat .v{font-size:22px; line-height:1; font-weight:600; font-variant-numeric:tabular-nums;}
+  .stat .s{font-size:11px; color:var(--faint); margin-top:6px; font-variant-numeric:tabular-nums;}
+
+  .cols{display:grid; grid-template-columns:260px 1fr; gap:24px; align-items:start;}
+  .card{background:#fff; border:1px solid var(--rule); border-radius:2px;}
+  .card h3{margin:0; padding:11px 16px; font-size:13px; font-weight:600; border-bottom:1px solid var(--rule);}
+  .cardBody{padding:16px;}
+  .grp{font-size:12px; font-weight:600; color:var(--navy); margin:16px 0 8px;}
+  .grp:first-child{margin-top:0;}
+
+  label.f{display:block; margin-bottom:12px;}
+  label.f .fl{display:block; font-size:12px; color:var(--muted); margin-bottom:4px;}
+  .fbox{display:flex; align-items:center; border:1px solid var(--rule); border-radius:2px; background:#fff;}
+  .fbox span{font-size:13px; color:var(--faint); padding:0 8px;}
+  .fbox input{width:100%; border:0; outline:0; background:transparent; padding:6px 8px;
+    font:inherit; font-size:14px; font-variant-numeric:tabular-nums; color:var(--ink); min-width:0;}
+  .fbox input:focus-visible, button:focus-visible{outline:2px solid var(--navy); outline-offset:1px;}
+  .fh{display:block; font-size:11px; color:var(--faint); margin-top:4px;}
+
+  .tabs{display:flex; flex-wrap:wrap; gap:4px; margin-bottom:16px;}
+  .tab{padding:8px 12px; font:inherit; font-size:13px; border:1px solid var(--rule);
+    background:#fff; color:var(--muted); border-radius:2px; cursor:pointer;}
+  .tab.on{background:var(--navy); border-color:var(--navy); color:#fff;}
+  .panel{display:none;} .panel.on{display:block;}
+
+  .row{display:flex; justify-content:space-between; align-items:baseline;
+    padding:6px 0; border-bottom:1px solid #EDF0F4;}
+  .row .rl{font-size:13px; color:#4A5563;}
+  .row .rv{font-size:13px; font-variant-numeric:tabular-nums;}
+  .row.b .rl,.row.b .rv{font-weight:600; color:var(--ink);}
+  .row.i .rl{padding-left:14px;}
+  .pass{color:var(--pass)!important;} .fail{color:var(--fail)!important;} .warn{color:var(--warn)!important;}
+
+  .doorHead{display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding:9px 16px; border-bottom:1px solid var(--rule); background:#FAFBFC; flex-wrap:wrap;}
+  .doorHead input{font:inherit; font-size:14px; font-weight:600; border:0; background:transparent; outline:0; color:var(--ink); max-width:220px;}
+  .doorTags{display:flex; align-items:center; gap:16px; font-size:12px; font-variant-numeric:tabular-nums;}
+  .doorGrid{display:grid; grid-template-columns:1fr 1fr; gap:0 24px; padding:16px;}
+  .inGrid{display:grid; grid-template-columns:1fr 1fr; gap:0 12px;}
+
+  .two{display:grid; grid-template-columns:1fr 1fr; gap:0 32px;}
+  .btn{padding:8px 12px; font:inherit; font-size:13px; border:1px solid var(--rule);
+    background:#fff; border-radius:2px; cursor:pointer;}
+  .btn.pri{background:var(--navy); border-color:var(--navy); color:#fff; width:100%; margin-top:16px;}
+  .lnk{font:inherit; font-size:12px; color:var(--faint); background:none; border:0; cursor:pointer; padding:0;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px; font-variant-numeric:tabular-nums;}
+  th{text-align:right; padding:8px 16px; font-weight:500; color:var(--muted); background:#FAFBFC; font-size:12px;}
+  th:first-child{text-align:left;}
+  td{text-align:right; padding:8px 16px; border-top:1px solid #EDF0F4;}
+  td:first-child{text-align:left;}
+
+  .solveItem{padding:12px 16px; border-bottom:1px solid #EDF0F4;}
+  .solveItem:last-child{border-bottom:0;}
+  .solveTop{display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; align-items:baseline;}
+  .solveName{font-size:14px; font-weight:600;}
+  .solveVal{font-size:13px; font-variant-numeric:tabular-nums;}
+  .solveVal .from{color:var(--faint);} .solveVal .to{font-weight:600; color:var(--navy);}
+  .solveVal .arw{color:#C3CBD6; margin:0 8px;}
+  .solveNote{font-size:12px; color:var(--muted); margin-top:4px;}
+  .foot{margin:32px 0; font-size:12px; color:var(--faint); max-width:760px;}
+  .prose{font-size:13px; color:#4A5563;} .prose p{margin:0 0 12px;} .prose p:last-child{margin:0;}
+  .tip{padding:12px 16px; font-size:12px; color:var(--muted); background:#FAFBFC;}
+
+  @media (max-width:900px){
+    .cols{grid-template-columns:1fr;} .stats{grid-template-columns:repeat(2,1fr);}
+    .stat{border-bottom:1px solid var(--rule);}
+    .doorGrid,.two{grid-template-columns:1fr;} .vBig{font-size:32px;}
+  }
+  @media print{
+    body{background:#fff;} .tabs,.btn,.lnk,#rail{display:none;}
+    .panel{display:block!important; page-break-inside:avoid;}
+    .cols{grid-template-columns:1fr;}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important;}}
+</style>
+</head>
+<body>
+
+<div id="verdictBar"><div class="wrap">
+  <div class="vTop">
+    <div><div class="vLabel" id="vLabel">Verdict</div><div class="vBig" id="vBig">—</div></div>
+    <div class="vGates" id="vGates"></div>
+  </div>
+  <div class="vNote" id="vNote"></div>
+</div></div>
+
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+
+  <div class="cols">
+    <div id="rail">
+      <div class="card">
+        <h3>Assumptions</h3>
+        <div class="cardBody" id="railBody"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="tabs" id="tabs"></div>
+
+      <div class="panel on" id="p-doors">
+        <div id="doorList"></div>
+        <button class="btn" id="addDoor" style="margin:16px 0;">Add a door</button>
+        <div class="card"><div class="cardBody">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Portfolio</div>
+          <div class="two" id="portOut"></div>
+        </div></div>
+      </div>
+
+      <div class="panel" id="p-solve"></div>
+      <div class="panel" id="p-balloon"></div>
+
+      <div class="panel" id="p-capacity">
+        <div class="card" style="margin-bottom:16px;"><div class="cardBody">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;" id="capTitle"></div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">
+            Describe a typical door and the model works backward from your cash and your gates.</div>
+          <div class="inGrid" style="max-width:420px;" id="capInputs"></div>
+          <div class="two" id="capOut"></div>
+        </div></div>
+        <div class="card"><div class="cardBody"><div class="prose" id="capProse"></div></div></div>
+      </div>
+
+      <div class="panel" id="p-partners">
+        <div class="card" style="margin-bottom:16px;"><div class="cardBody">
+          <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Structure</div>
+          <div class="inGrid" id="pInputs" style="grid-template-columns:repeat(3,1fr);"></div>
+        </div></div>
+        <div class="card" style="margin-bottom:16px;">
+          <h3>Annual distributions</h3>
+          <div style="overflow-x:auto;"><table id="wfTable"></table></div>
+        </div>
+        <div class="card"><div class="cardBody">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;" id="exitTitle"></div>
+          <div class="two" id="exitOut"></div>
+          <div id="prefWarn" style="margin-top:12px;font-size:12px;" class="warn"></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">
+    Reserve-adjusted DSCR deducts the capex reserve before coverage, which runs roughly 0.20–0.30 stricter
+    than a lender's calculation — both are shown so you can see the gap. Cash-on-cash counts held reserves
+    in the denominator, since that capital isn't available for anything else. Nothing here is tax or legal
+    advice; entity structure, installment-sale treatment on the seller's side, and the note itself belong
+    with a CPA and a Texas real estate attorney. All calculations run in your browser — nothing is sent
+    anywhere or stored.
+  </p>
+</div>
+
+<script>
+/* ============ state ============ */
+var g = {
+  cash:120000, downPct:.20, closingPct:.02,
+  rate:.07, amYears:30, balloonYears:5,
+  vacancyPct:.08, pmPct:.10, maintPct:.08, capexPct:.05,
+  reserveMonths:3, reserveCapexPerDoor:3000,
+  rentGrowth:.02, expenseGrowth:.03, appreciation:.015,
+  refiStressBump:.02, refiMaxLTV:.75,
+  gateDSCR:1.25, gateCoC:.08,
+  taxRatePct:.022, insDefault:2200
+};
+var uid = 0;
+function mkDoor(n, price, rent){
+  price = price || 150000; rent = rent || 1450;
+  return {id:'d'+(++uid), name:'House '+n, price:price, rent:rent,
+    taxAnnual:Math.round(price*g.taxRatePct), insAnnual:g.insDefault, hoaMonthly:0, makeReady:4000};
+}
+var doors = [mkDoor(1), mkDoor(2,135000,1325)];
+var cap = {price:145000, rent:1425};
+var partner = {lpCapital:60000, gpCapital:60000, prefRate:.09, lpCashShare:.30, lpExitShare:.30,
+  exitYear:5, lossProRata:1};
+
+/* ============ helpers ============ */
+function n(v){ var x = typeof v==='number'?v:parseFloat(String(v).replace(/[^0-9.\-]/g,'')); return isFinite(x)?x:0; }
+function usd(x){ if(x===null||x===undefined||!isFinite(x))return '—';
+  return (x<0?'-$':'$')+Math.abs(Math.round(x)).toLocaleString('en-US'); }
+function usd2(x){ return !isFinite(x)?'—':(x<0?'-$':'$')+Math.abs(x).toFixed(2); }
+function pc(x,d){ d=(d===undefined)?1:d; return !isFinite(x)?'—':(x*100).toFixed(d)+'%'; }
+function mx(x){ return !isFinite(x)?'—':x.toFixed(2)+'x'; }
+function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+function pmt(P,r,y){ var m=r/12, N=y*12; if(N<=0)return 0; if(m===0)return P/N;
+  return P*m/(1-Math.pow(1+m,-N)); }
+function balAfter(P,r,y,months){ var m=r/12, N=y*12, k=Math.min(months,N);
+  if(m===0)return P*(1-k/N);
+  return P*(Math.pow(1+m,N)-Math.pow(1+m,k))/(Math.pow(1+m,N)-1); }
+function prinFromPmt(p,r,y){ var m=r/12, N=y*12; if(m===0)return p*N;
+  return p*(1-Math.pow(1+m,-N))/m; }
+
+/* ============ underwriting ============ */
+function calcDoor(d,gg){
+  var price=n(d.price), rent=n(d.rent);
+  var gsi=rent*12, vacancy=gsi*gg.vacancyPct, egi=gsi-vacancy;
+  var mgmt=egi*gg.pmPct, maint=egi*gg.maintPct;
+  var taxes=n(d.taxAnnual), ins=n(d.insAnnual), hoa=n(d.hoaMonthly)*12;
+  var opex=taxes+ins+hoa+mgmt+maint;
+  var opexFixed=taxes+ins+hoa, opexVar=mgmt+maint;
+  var noi=egi-opex, capexRes=egi*gg.capexPct;
+  var loan=price*(1-gg.downPct), pm=pmt(loan,gg.rate,gg.amYears), ads=pm*12;
+  var dscrLender= ads>0? noi/ads : Infinity;
+  var dscrAdj   = ads>0? (noi-capexRes)/ads : Infinity;
+  var cashFlow=noi-capexRes-ads;
+  var down=price*gg.downPct, closing=price*gg.closingPct, makeReady=n(d.makeReady);
+  var piti=pm+taxes/12+ins/12;
+  var reserveHold=gg.reserveMonths*piti+gg.reserveCapexPerDoor;
+  var cashIn=down+closing+makeReady+reserveHold;
+  var allIn=price+makeReady+closing;
+  return {price:price,rent:rent,gsi:gsi,vacancy:vacancy,egi:egi,mgmt:mgmt,maint:maint,
+    taxes:taxes,ins:ins,hoa:hoa,opex:opex,opexFixed:opexFixed,opexVar:opexVar,
+    noi:noi,capexRes:capexRes,loan:loan,pmtMonthly:pm,
+    ads:ads,dscrLender:dscrLender,dscrAdj:dscrAdj,cashFlow:cashFlow,down:down,closing:closing,
+    makeReady:makeReady,reserveHold:reserveHold,cashIn:cashIn,piti:piti,allIn:allIn,
+    coc: cashIn>0? cashFlow/cashIn : 0,
+    capRate: allIn>0? noi/allIn : 0,
+    rentToPrice: price>0? rent/price : 0,
+    passDSCR: dscrAdj>=gg.gateDSCR, passCoC: (cashIn>0?cashFlow/cashIn:0)>=gg.gateCoC};
+}
+function calcPort(rs,gg){
+  var s={gsi:0,egi:0,noi:0,capexRes:0,ads:0,cashFlow:0,cashIn:0,loan:0,price:0,allIn:0,
+         opex:0,opexFixed:0,opexVar:0,down:0,closing:0,makeReady:0,reserveHold:0};
+  rs.forEach(function(r){ for(var k in s) s[k]+=r[k]; });
+  s.dscrLender = s.ads>0? s.noi/s.ads : Infinity;
+  s.dscrAdj    = s.ads>0? (s.noi-s.capexRes)/s.ads : Infinity;
+  s.coc = s.cashIn>0? s.cashFlow/s.cashIn : 0;
+  s.capRate = s.allIn>0? s.noi/s.allIn : 0;
+  s.headroom = gg.cash - s.cashIn;
+  s.passDSCR = s.dscrAdj>=gg.gateDSCR; s.passCoC = s.coc>=gg.gateCoC; s.passCash = s.headroom>=0;
+  var worst=null; rs.forEach(function(r){ if(!worst||r.gsi>worst.gsi) worst=r; });
+  s.stressCF = s.cashFlow - (worst? worst.gsi*0.25 : 0);
+  s.stressYears = (s.stressCF<0 && s.reserveHold>0)? s.reserveHold/(-s.stressCF) : Infinity;
+  return s;
+}
+/* Project year-t operating figures.
+   Fixed costs (taxes, insurance, HOA) inflate at expenseGrowth.
+   Variable costs (management, maintenance) are a % of EGI, so they track EGI. */
+function projectYear(port,gg,t){
+  var egi  = port.egi*Math.pow(1+gg.rentGrowth,t);
+  var fixed= port.opexFixed*Math.pow(1+gg.expenseGrowth,t);
+  var vari = port.opexVar*Math.pow(1+gg.rentGrowth,t);
+  var opex = fixed+vari;
+  var capex= egi*gg.capexPct;
+  return {egi:egi, opex:opex, noi:egi-opex, capex:capex, cashFlow:egi-opex-capex-port.ads};
+}
+function bisect(f,lo,hi,goal){
+  var fa=f(lo)-goal, fb=f(hi)-goal;
+  if(!isFinite(fa)||!isFinite(fb)||fa*fb>0) return null;
+  var a=lo,b=hi;
+  for(var i=0;i<80;i++){ var m=(a+b)/2, fm=f(m)-goal;
+    if(fa*fm<=0) b=m; else { a=m; fa=fm; } }
+  return (a+b)/2;
+}
+
+/* ============ field builders ============ */
+var FIELDS_RAIL = [
+  ['grp','Capital'],
+  ['n','cash','Deployable cash','$','',1000,''],
+  ['p','downPct','Down payment','','%',0.5,''],
+  ['p','closingPct','Closing costs','','%',0.25,'Lower with seller financing — no lender fees, still title and legal.'],
+  ['grp','Seller note'],
+  ['p','rate','Interest rate','','%',0.125,''],
+  ['n','amYears','Amortization','','yr',1,''],
+  ['n','balloonYears','Balloon','','yr',1,'0 = fully amortizing, no refi risk.'],
+  ['grp','Operating'],
+  ['p','vacancyPct','Vacancy','','%',0.5,''],
+  ['p','pmPct','Management','','%',0.5,"Set to 0 only if you'll truly self-manage."],
+  ['p','maintPct','Maintenance','','%',0.5,''],
+  ['p','capexPct','Capex reserve','','%',0.5,'Deducted before the DSCR gate. This is the strict part.'],
+  ['grp','Reserve policy'],
+  ['n','reserveMonths','Months of PITI held','','mo',1,''],
+  ['n','reserveCapexPerDoor','Capex held per door','$','',500,''],
+  ['grp','Growth and stress'],
+  ['p','rentGrowth','Rent growth','','%/yr',0.5,''],
+  ['p','expenseGrowth','Expense growth','','%/yr',0.5,'Kept above rent growth on purpose.'],
+  ['p','appreciation','Appreciation','','%/yr',0.5,''],
+  ['p','refiStressBump','Refi rate stress','','+pts',0.25,''],
+  ['p','refiMaxLTV','Refi max LTV','','%',5,''],
+  ['grp','Gates'],
+  ['n','gateDSCR','Reserve-adjusted DSCR','','x',0.05,''],
+  ['p','gateCoC','Cash-on-cash','','%',0.5,'']
+];
+function fieldHTML(kind,key,label,pre,suf,step,hint,val,scope,did){
+  var v = kind==='p'? (val*100).toFixed(2).replace(/\.?0+$/,'') : val;
+  return '<label class="f"><span class="fl">'+esc(label)+'</span><span class="fbox">'+
+    (pre?'<span>'+pre+'</span>':'')+
+    '<input type="number" step="'+step+'" value="'+v+'" data-scope="'+scope+'" data-kind="'+kind+'" data-key="'+key+'"'+
+    (did?' data-did="'+did+'"':'')+'>'+
+    (suf?'<span>'+suf+'</span>':'')+'</span>'+
+    (hint?'<span class="fh">'+esc(hint)+'</span>':'')+'</label>';
+}
+function row(l,v,opt){ opt=opt||{};
+  return '<div class="row'+(opt.b?' b':'')+(opt.i?' i':'')+'"><span class="rl">'+l+
+    '</span><span class="rv'+(opt.tone?' '+opt.tone:'')+'">'+v+'</span></div>'; }
+
+/* ============ build shell ============ */
+function buildRail(){
+  var h='';
+  FIELDS_RAIL.forEach(function(f){
+    if(f[0]==='grp'){ h+='<div class="grp">'+f[1]+'</div>'; return; }
+    h+=fieldHTML(f[0],f[1],f[2],f[3],f[4],f[5],f[6],g[f[1]],'g');
+  });
+  h+='<button class="btn pri" id="dl">Download the numbers</button>';
+  document.getElementById('railBody').innerHTML=h;
+}
+var TABS=[['doors','Doors'],['solve','What would make it work'],['balloon','Balloon'],
+          ['capacity','Capacity'],['partners','Partners']];
+function buildTabs(){
+  document.getElementById('tabs').innerHTML = TABS.map(function(t,i){
+    return '<button class="tab'+(i===0?' on':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>';}).join('');
+}
+function buildDoors(){
+  document.getElementById('doorList').innerHTML = doors.map(function(d){
+    return '<div class="card" style="margin-bottom:16px;">'+
+      '<div class="doorHead">'+
+        '<input value="'+esc(d.name)+'" data-scope="door" data-kind="s" data-key="name" data-did="'+d.id+'">'+
+        '<div class="doorTags" id="tags-'+d.id+'"></div>'+
+      '</div>'+
+      '<div class="doorGrid"><div class="inGrid">'+
+        fieldHTML('n','price','Purchase price','$','',1000,'',d.price,'door',d.id)+
+        fieldHTML('n','rent','Monthly rent','$','',25,'',d.rent,'door',d.id)+
+        fieldHTML('n','taxAnnual','Annual taxes','$','',100,'Actual bill, not an estimate.',d.taxAnnual,'door',d.id)+
+        fieldHTML('n','insAnnual','Annual insurance','$','',100,'Check the hail deductible.',d.insAnnual,'door',d.id)+
+        fieldHTML('n','hoaMonthly','HOA / mo','$','',10,'',d.hoaMonthly,'door',d.id)+
+        fieldHTML('n','makeReady','Make-ready','$','',500,'',d.makeReady,'door',d.id)+
+      '</div><div id="out-'+d.id+'"></div></div></div>';
+  }).join('');
+}
+function buildCapInputs(){
+  document.getElementById('capInputs').innerHTML =
+    fieldHTML('n','price','Typical price','$','',5000,'',cap.price,'cap')+
+    fieldHTML('n','rent','Typical rent','$','',25,'',cap.rent,'cap');
+}
+function buildPartnerInputs(){
+  document.getElementById('pInputs').innerHTML =
+    fieldHTML('n','lpCapital','Partner capital','$','',5000,'',partner.lpCapital,'partner')+
+    fieldHTML('n','gpCapital','Your capital','$','',5000,'',partner.gpCapital,'partner')+
+    fieldHTML('p','prefRate','Preferred return','','%/yr',0.5,"Simple accrual, not compounding, if cash flow can't pay it.",partner.prefRate,'partner')+
+    fieldHTML('p','lpCashShare','Partner share of residual cash','','%',5,'',partner.lpCashShare,'partner')+
+    fieldHTML('p','lpExitShare','Partner share of sale residual','','%',5,'',partner.lpExitShare,'partner')+
+    fieldHTML('n','exitYear','Sale year','','yr',1,'',partner.exitYear,'partner')+
+    '<label class="f"><span class="fl">Loss sharing</span>'+
+    '<span class="fbox"><select id="lossSel" style="width:100%;border:0;outline:0;background:transparent;'+
+    'padding:6px 8px;font:inherit;font-size:14px;color:var(--ink);">'+
+    '<option value="1"'+(partner.lossProRata?' selected':'')+'>Pro-rata by capital</option>'+
+    '<option value="0"'+(partner.lossProRata?'':' selected')+'>You absorb the loss</option>'+
+    '</select></span>'+
+    '<span class="fh">Only applies if the sale nets a loss.</span></label>';
+}
+
+/* ============ render outputs ============ */
+function render(){
+  var rs = doors.map(function(d){ return calcDoor(d,g); });
+  var port = calcPort(rs,g);
+  var ok = port.passDSCR && port.passCoC && port.passCash;
+
+  /* verdict */
+  var bar=document.getElementById('verdictBar');
+  bar.className = ok?'go':'nogo';
+  document.getElementById('vLabel').textContent='Verdict on '+doors.length+' door'+(doors.length===1?'':'s');
+  document.getElementById('vBig').textContent = ok?'GO':'NO-GO';
+  document.getElementById('vGates').innerHTML =
+    '<span>Adj DSCR <strong>'+mx(port.dscrAdj)+'</strong> '+(port.passDSCR?'✓':'✗')+' <span class="dim">vs '+mx(g.gateDSCR)+'</span></span>'+
+    '<span>Cash-on-cash <strong>'+pc(port.coc)+'</strong> '+(port.passCoC?'✓':'✗')+' <span class="dim">vs '+pc(g.gateCoC,0)+'</span></span>'+
+    '<span>Cash needed <strong>'+usd(port.cashIn)+'</strong> '+(port.passCash?'✓':'✗')+' <span class="dim">of '+usd(g.cash)+'</span></span>';
+  document.getElementById('vNote').innerHTML = ok?'' :
+    (!port.passCash?'Short '+usd(-port.headroom)+' of cash. ':'')+
+    (!port.passDSCR?'Coverage is '+mx(port.dscrAdj)+' against a '+mx(g.gateDSCR)+' gate. ':'')+
+    (!port.passCoC?'Return is '+pc(port.coc)+' against an '+pc(g.gateCoC,0)+' gate. ':'')+
+    'Open “What would make it work” for the exact number each lever has to hit.';
+
+  /* stats */
+  function stat(l,v,tone,s){ return '<div class="stat"><div class="l">'+l+'</div><div class="v'+
+    (tone?' '+tone:'')+'">'+v+'</div>'+(s?'<div class="s">'+s+'</div>':'')+'</div>'; }
+  document.getElementById('stats').innerHTML =
+    stat('Monthly cash flow', usd(port.cashFlow/12), port.cashFlow>=0?'pass':'fail', usd(port.cashFlow)+'/yr after reserves')+
+    stat('Lender DSCR', mx(port.dscrLender),'', 'what a bank would compute')+
+    stat('Cap rate', pc(port.capRate),'', 'on '+usd(port.allIn)+' all-in')+
+    stat('Total debt', usd(port.loan),'', usd(port.ads/12)+'/mo service')+
+    stat('One door dark 3 mo', usd(port.stressCF), port.stressCF>=0?'pass':'warn',
+      port.stressCF>=0?'still positive':'reserves cover '+(isFinite(port.stressYears)?port.stressYears.toFixed(1):'—')+' yr');
+
+  /* doors */
+  doors.forEach(function(d,i){
+    var r=rs[i];
+    var tags=document.getElementById('tags-'+d.id);
+    if(tags) tags.innerHTML =
+      '<span class="'+(r.passDSCR?'pass':'fail')+'">DSCR '+mx(r.dscrAdj)+'</span>'+
+      '<span class="'+(r.passCoC?'pass':'fail')+'">CoC '+pc(r.coc)+'</span>'+
+      '<span style="color:var(--faint)">'+(r.rentToPrice*100).toFixed(2)+'% rent/price</span>'+
+      (doors.length>1?'<button class="lnk" data-rm="'+d.id+'">remove</button>':'');
+    var out=document.getElementById('out-'+d.id);
+    if(out) out.innerHTML =
+      row('Gross scheduled rent',usd(r.gsi))+
+      row('Vacancy',usd(-r.vacancy),{i:1})+
+      row('Effective gross income',usd(r.egi),{b:1})+
+      row('Taxes',usd(-r.taxes),{i:1})+
+      row('Insurance',usd(-r.ins),{i:1})+
+      (r.hoa>0?row('HOA',usd(-r.hoa),{i:1}):'')+
+      row('Management',usd(-r.mgmt),{i:1})+
+      row('Maintenance',usd(-r.maint),{i:1})+
+      row('Net operating income',usd(r.noi),{b:1})+
+      row('Capex reserve',usd(-r.capexRes),{i:1})+
+      row('Debt service',usd(-r.ads),{i:1})+
+      row('Cash flow',usd(r.cashFlow),{b:1,tone:r.cashFlow>=0?'pass':'fail'})+
+      '<div style="height:12px"></div>'+
+      row('Cash to acquire',usd(r.cashIn),{b:1})+
+      row('Down payment',usd(r.down),{i:1})+
+      row('Closing',usd(r.closing),{i:1})+
+      row('Make-ready',usd(r.makeReady),{i:1})+
+      row('Reserves ('+g.reserveMonths+' mo PITI + '+usd(g.reserveCapexPerDoor)+')',usd(r.reserveHold),{i:1})+
+      row('Monthly P&amp;I',usd2(r.pmtMonthly));
+  });
+
+  document.getElementById('portOut').innerHTML =
+    '<div>'+
+      row('Effective gross income',usd(port.egi))+
+      row('Operating expenses',usd(-port.opex))+
+      row('Net operating income',usd(port.noi),{b:1})+
+      row('Capex reserve',usd(-port.capexRes),{i:1})+
+      row('Debt service',usd(-port.ads),{i:1})+
+      row('Annual cash flow',usd(port.cashFlow),{b:1,tone:port.cashFlow>=0?'pass':'fail'})+
+      row('Expense ratio',pc(port.egi>0?port.opex/port.egi:0))+
+    '</div><div>'+
+      row('Total purchase',usd(port.price))+
+      row('Total debt',usd(port.loan))+
+      row('Cash required',usd(port.cashIn),{b:1})+
+      row('Cash available',usd(g.cash))+
+      row(port.headroom>=0?'Headroom':'Shortfall',usd(Math.abs(port.headroom)),{b:1,tone:port.headroom>=0?'pass':'fail'})+
+      row('Reserve-adjusted DSCR',mx(port.dscrAdj),{b:1,tone:port.passDSCR?'pass':'fail'})+
+      row('Cash-on-cash',pc(port.coc),{b:1,tone:port.passCoC?'pass':'fail'})+
+    '</div>';
+
+  renderSolve(port);
+  renderBalloon(port);
+  renderCapacity();
+  renderPartners(port);
+  window.__last = {rs:rs, port:port};
+}
+
+/* ---- solve ---- */
+function renderSolve(port){
+  function portDSCR(ds,gg){
+    var rs=ds.map(function(d){return calcDoor(d,gg);});
+    var noi=0,cx=0,ads=0;
+    rs.forEach(function(r){noi+=r.noi;cx+=r.capexRes;ads+=r.ads;});
+    return ads>0?(noi-cx)/ads:Infinity;
+  }
+  var scaleP=function(f){ return doors.map(function(d){
+    return Object.assign({},d,{price:n(d.price)*f, taxAnnual:n(d.taxAnnual)*f});}); };
+  var scaleR=function(f){ return doors.map(function(d){
+    return Object.assign({},d,{rent:n(d.rent)*f});}); };
+
+  var out=[];
+  var totalPrice=port.price, totalRent=doors.reduce(function(a,d){return a+n(d.rent);},0);
+
+  var pf=bisect(function(x){return portDSCR(scaleP(x),g);},0.25,1.8,g.gateDSCR);
+  if(pf!==null) out.push({lever:'Purchase price',from:usd(totalPrice),to:usd(totalPrice*pf),
+    note:(pf<1?'cut ':'room to raise ')+pc(Math.abs(1-pf))+' — scaled proportionally across doors.'});
+
+  var rf=bisect(function(x){return portDSCR(scaleR(x),g);},0.5,2.5,g.gateDSCR);
+  if(rf!==null) out.push({lever:'Monthly rent, all doors',from:usd(totalRent),to:usd(totalRent*rf),
+    note:(rf>1?'needs ':'cushion of ')+pc(Math.abs(rf-1))+' — pressure-test against real comps before relying on it.'});
+
+  var rs_=bisect(function(x){return portDSCR(doors,Object.assign({},g,{rate:x}));},0.0001,g.rate+0.12,g.gateDSCR);
+  if(rs_!==null) out.push({lever:'Seller note rate',from:pc(g.rate,2),to:pc(rs_,2),
+    note:(rs_<g.rate?'must come down ':'room to go up ')+(Math.abs(rs_-g.rate)*100).toFixed(2)+
+    ' pts — the cheapest thing to negotiate, and it costs the seller less than a price cut.'});
+
+  var am=bisect(function(x){return portDSCR(doors,Object.assign({},g,{amYears:x}));},5,40,g.gateDSCR);
+  if(am!==null) out.push({lever:'Amortization',from:g.amYears+' yr',to:am.toFixed(1)+' yr',
+    note:(am>g.amYears?'stretch '+(am-g.amYears).toFixed(1)+' yr':'cushion of '+(g.amYears-am).toFixed(1)+' yr')+
+    ' — lowers the payment without touching price.'});
+
+  var dp=bisect(function(x){return portDSCR(doors,Object.assign({},g,{downPct:x}));},0,0.85,g.gateDSCR);
+  if(dp!==null){
+    var alt=calcPort(doors.map(function(d){return calcDoor(d,Object.assign({},g,{downPct:dp}));}),g);
+    out.push({lever:'Down payment',from:pc(g.downPct,0),to:pc(dp),
+      note:'needs '+usd(alt.cashIn)+' of cash and drops cash-on-cash to '+pc(alt.coc)+'.'});
+  }
+  var ex=bisect(function(x){return portDSCR(doors,Object.assign({},g,
+    {pmPct:g.pmPct*x,maintPct:g.maintPct*x,capexPct:g.capexPct*x}));},0.05,2,g.gateDSCR);
+  if(ex!==null && ex<1) out.push({lever:'Operating load',
+    from:pc(g.pmPct+g.maintPct+g.capexPct)+' of income', to:pc((g.pmPct+g.maintPct+g.capexPct)*ex)+' of income',
+    note:'self-managing saves '+pc(g.pmPct,0)+'. Real work, not free money — only count it if you will actually do it.'});
+
+  var h='<div class="card"><div style="padding:12px 16px;border-bottom:1px solid var(--rule);">'+
+    '<div style="font-size:13px;font-weight:600;">Each lever, solved to a reserve-adjusted DSCR of '+mx(g.gateDSCR)+'</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-top:4px;">One at a time, everything else held constant. Combine two and you need less of each.</div></div>';
+  if(out.length===0){
+    h+='<div style="padding:24px 16px;font-size:13px;color:var(--muted);">No lever crosses the gate inside a sane range. The gap is structural — price and rent are too far apart for any single term to close.</div>';
+  } else {
+    out.forEach(function(s){
+      h+='<div class="solveItem"><div class="solveTop"><span class="solveName">'+s.lever+'</span>'+
+        '<span class="solveVal"><span class="from">'+s.from+'</span><span class="arw">to</span><span class="to">'+s.to+'</span></span></div>'+
+        '<div class="solveNote">'+s.note+'</div></div>';
+    });
+  }
+  h+='<div class="tip">Cheapest lever to negotiate is usually amortization, then rate, then price. A seller giving up a point of rate loses far less than one giving up ten percent of price, and it moves your coverage almost as much.</div></div>';
+  document.getElementById('p-solve').innerHTML=h;
+}
+
+/* ---- balloon ---- */
+function renderBalloon(port){
+  var t=g.balloonYears;
+  if(t<=0){
+    document.getElementById('p-balloon').innerHTML =
+      '<div class="card"><div class="cardBody">'+
+        '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">No balloon</div>'+
+        '<div class="prose"><p class="pass">The note fully amortizes over '+g.amYears+
+        ' years. There is no balloon date and no refinance risk to test.</p>'+
+        '<p>This is the safest structure available to you, and the one worth asking for. '+
+        'If the seller will not go that far, a longer balloon with a written right to extend '+
+        'is the next best thing. Set a balloon year above to stress-test that scenario.</p></div>'+
+      '</div></div>';
+    return;
+  }
+  var bal=doors.reduce(function(a,d){return a+balAfter(n(d.price)*(1-g.downPct),g.rate,g.amYears,t*12);},0);
+  var value=doors.reduce(function(a,d){return a+n(d.price)*Math.pow(1+g.appreciation,t);},0);
+  var pj=projectYear(port,g,t);
+  var egiT=pj.egi, opexT=pj.opex, noiT=pj.noi, capexT=pj.capex;
+  var refiRate=g.rate+g.refiStressBump;
+  var byLTV=value*g.refiMaxLTV;
+  var byDSCR=prinFromPmt(((noiT-capexT)/g.gateDSCR)/12, refiRate, 30);
+  var maxRefi=Math.min(byLTV,byDSCR), gap=bal-maxRefi;
+  var rateNeeded=bisect(function(r){ return (noiT-capexT)/(pmt(bal,r,30)*12); },0.0001,0.30,g.gateDSCR);
+  var valueNeeded=bal/g.refiMaxLTV;
+
+  var prose = gap>0
+    ? '<p class="fail">This balloon does not clear on its own terms.</p>'+
+      '<p>To refinance the full balance you would need a rate of <strong>'+
+        (rateNeeded!==null?pc(rateNeeded,2):'below anything realistic')+
+        '</strong> or an appraised value of <strong>'+usd(valueNeeded)+'</strong> — against the '+usd(value)+' this model projects.</p>'+
+      '<p>The fix is not a better forecast. It is a longer term on the note. Ask for ten years instead of '+t+', or for a written right to extend.</p>'
+    : '<p class="pass">The balloon clears with '+usd(-gap)+' to spare at a stressed rate.</p>'+
+      '<p>That cushion rests on '+pc(g.appreciation)+' appreciation and '+pc(g.rentGrowth)+
+      ' rent growth. Set both to zero and see whether it still holds. If it does, the term is genuinely safe.</p>';
+
+  document.getElementById('p-balloon').innerHTML =
+    '<div class="card" style="margin-bottom:16px;"><div class="cardBody">'+
+      '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">Refinancing in year '+t+'</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Tested at '+pc(refiRate,2)+
+        ' — your note rate plus a '+pc(g.refiStressBump,2)+' stress — against '+pc(g.refiMaxLTV,0)+
+        ' LTV and the same '+mx(g.gateDSCR)+' coverage gate.</div>'+
+      '<div class="two"><div>'+
+        row('Balloon balance due',usd(bal),{b:1})+
+        row('Projected value',usd(value))+
+        row('Projected net operating income',usd(noiT))+
+        row('Max refinance by LTV',usd(byLTV),{i:1})+
+        row('Max refinance by coverage',usd(byDSCR),{i:1})+
+        row('Refinanceable',usd(maxRefi),{b:1})+
+        row(gap>0?'Cash you must bring':'Cushion',usd(Math.abs(gap)),{b:1,tone:gap>0?'fail':'pass'})+
+      '</div><div class="prose" style="padding-top:4px;">'+prose+'</div></div>'+
+    '</div></div>'+
+    '<div class="card"><div class="tip">A seller-carried note with a short balloon transfers the refinance risk entirely to you. Term length is the most valuable thing to negotiate here, and it costs the seller almost nothing to give.</div></div>';
+}
+
+/* ---- capacity ---- */
+function renderCapacity(){
+  var proto={id:'proto',name:'Typical',price:cap.price,rent:cap.rent,
+    taxAnnual:Math.round(cap.price*g.taxRatePct),insAnnual:g.insDefault,hoaMonthly:0,makeReady:4000};
+  var r=calcDoor(proto,g);
+  var doorsByCash=Math.floor(g.cash/r.cashIn);
+  var maxPrice=bisect(function(x){
+    var d=Object.assign({},proto,{price:x,taxAnnual:Math.round(x*g.taxRatePct)});
+    return calcDoor(d,g).dscrAdj; }, cap.price*0.25, cap.price*1.8, g.gateDSCR);
+  var minRent=bisect(function(x){
+    return calcDoor(Object.assign({},proto,{rent:x}),g).dscrAdj; }, cap.rent*0.4, cap.rent*3, g.gateDSCR);
+  var minRentCoC=bisect(function(x){
+    return calcDoor(Object.assign({},proto,{rent:x}),g).coc; }, cap.rent*0.4, cap.rent*3, g.gateCoC);
+
+  document.getElementById('capTitle').textContent='What '+usd(g.cash)+' actually buys';
+  document.getElementById('capOut').innerHTML =
+    '<div>'+
+      row('Cash per door',usd(r.cashIn),{b:1})+
+      row('Down payment',usd(r.down),{i:1})+
+      row('Closing',usd(r.closing),{i:1})+
+      row('Make-ready',usd(r.makeReady),{i:1})+
+      row('Reserves held',usd(r.reserveHold),{i:1})+
+      row('Doors your cash supports',String(doorsByCash),{b:1,tone:doorsByCash>0?'pass':'fail'})+
+      row('Purchase power',usd(doorsByCash*cap.price))+
+      row('Debt at that scale',usd(doorsByCash*r.loan),{b:1})+
+    '</div><div>'+
+      row("This door's adjusted DSCR",mx(r.dscrAdj),{b:1,tone:r.passDSCR?'pass':'fail'})+
+      row("This door's cash-on-cash",pc(r.coc),{b:1,tone:r.passCoC?'pass':'fail'})+
+      row('Monthly cash flow',usd(r.cashFlow/12),{tone:r.cashFlow>=0?'pass':'fail'})+
+      '<div style="height:12px"></div>'+
+      row('Max price at this rent',maxPrice!==null?usd(maxPrice):'—',{b:1})+
+      row('Min rent at this price',minRent!==null?usd(minRent):'—',{b:1})+
+      row('Min rent to hit '+pc(g.gateCoC,0)+' cash-on-cash',minRentCoC!==null?usd(minRentCoC):'—')+
+    '</div>';
+  document.getElementById('capProse').innerHTML = r.passDSCR
+    ? '<p>Your cash, not the coverage, is the limit here. You could carry more debt than '+usd(doorsByCash*r.loan)+
+      ' if you had more equity — which is the case for raising partner capital rather than stretching terms.</p>'
+    : '<p>Coverage, not cash, is the limit. Buying more doors at these numbers just multiplies a deal that does not carry itself. Fix the price, the rent, or the terms first — more equity only buys a bigger version of the same problem.</p>';
+}
+
+/* ---- partners ---- */
+function renderPartners(port){
+  var total=partner.lpCapital+partner.gpCapital, unpaid=0, rows=[], lpSum=0;
+  for(var y=1;y<=partner.exitYear;y++){
+    var pjY=projectYear(port,g,y-1);
+    var cf=pjY.cashFlow;
+    var due=total*partner.prefRate+unpaid;
+    var paid=Math.max(0,Math.min(cf,due));
+    unpaid=due-paid;
+    var resid=Math.max(0,cf-paid);
+    var lpPref= total>0? paid*(partner.lpCapital/total):0;
+    var lp=lpPref+resid*partner.lpCashShare;
+    lpSum+=lp;
+    rows.push({y:y,cf:cf,paid:paid,unpaid:unpaid,lp:lp,gp:paid-lpPref+resid*(1-partner.lpCashShare)});
+  }
+  document.getElementById('wfTable').innerHTML =
+    '<thead><tr><th>Year</th><th>Cash flow</th><th>Pref paid</th><th>Pref accrued</th><th>To partner</th><th>To you</th></tr></thead><tbody>'+
+    rows.map(function(r){ return '<tr><td>'+r.y+'</td>'+
+      '<td'+(r.cf<0?' class="fail"':'')+'>'+usd(r.cf)+'</td>'+
+      '<td>'+usd(r.paid)+'</td>'+
+      '<td'+(r.unpaid>0?' class="warn"':'')+'>'+usd(r.unpaid)+'</td>'+
+      '<td>'+usd(r.lp)+'</td><td>'+usd(r.gp)+'</td></tr>'; }).join('')+'</tbody>';
+
+  var t=partner.exitYear;
+  var value=doors.reduce(function(a,d){return a+n(d.price)*Math.pow(1+g.appreciation,t);},0);
+  var bal=doors.reduce(function(a,d){return a+balAfter(n(d.price)*(1-g.downPct),g.rate,g.amYears,t*12);},0);
+  var sellCost=value*0.06, net=value-sellCost-bal, rem=net;
+  var share= total>0? partner.lpCapital/total : 0;
+  var capRet, catchUp, lpExit;
+  if(net<0){
+    /* Loss. Nothing is returned; the deficit is allocated per the loss-sharing rule. */
+    capRet=0; catchUp=0;
+    lpExit = partner.lossProRata? net*share : 0;
+  } else {
+    capRet=Math.min(rem,total); rem-=capRet;
+    catchUp=Math.min(rem,unpaid); rem-=catchUp;
+    lpExit=capRet*share+catchUp*share+Math.max(rem,0)*partner.lpExitShare;
+  }
+  var gpExit=net-lpExit;
+
+  document.getElementById('exitTitle').textContent='Sale in year '+t;
+  document.getElementById('exitOut').innerHTML =
+    '<div>'+
+      row('Sale price',usd(value))+
+      row('Selling costs at 6%',usd(-sellCost),{i:1})+
+      row('Loan payoff',usd(-bal),{i:1})+
+      row('Net proceeds',usd(net),{b:1,tone:net>=0?'pass':'fail'})+
+      row('Return of capital',usd(capRet),{i:1})+
+      row('Unpaid pref caught up',usd(catchUp),{i:1})+
+      row('Residual to split',usd(Math.max(rem,0)),{i:1})+
+    '</div><div>'+
+      row('To partner at sale',usd(lpExit),{b:1})+
+      row('To you at sale',usd(gpExit),{b:1})+
+      '<div style="height:12px"></div>'+
+      row('Partner total over the hold',usd(lpSum+lpExit),{b:1})+
+      row('Partner capital in',usd(partner.lpCapital))+
+      row('Partner multiple', partner.lpCapital>0?((lpSum+lpExit)/partner.lpCapital).toFixed(2)+'x':'—',{b:1})+
+    '</div>';
+  var warn=[];
+  if(unpaid>0) warn.push('Pref is accruing unpaid — '+usd(unpaid)+' by year '+t+
+    '. Cash flow is not covering the promise you made. That is a conversation to have before the money comes in, not after.');
+  var negYears=rows.filter(function(r){return r.cf<0;});
+  if(negYears.length){
+    var worstCall=Math.min.apply(null,negYears.map(function(r){return r.cf;}));
+    warn.push('Cash flow is negative in '+negYears.length+' of '+t+' year'+(t===1?'':'s')+
+      ' — worst year needs '+usd(-worstCall)+' in. That is a capital call, not a rounding error. '+
+      'Decide the per-call and lifetime caps before you sign, and say plainly whose money fills the gap.');
+  }
+  if(net<0) warn.push('The sale nets a loss of '+usd(-net)+'. '+
+    (partner.lossProRata? 'Allocated pro-rata, your partner is down '+usd(-lpExit)+' and you are down '+usd(-gpExit)+'.'
+                        : 'You are absorbing all of it; your partner is down nothing. Confirm that is really the deal you signed.'));
+  document.getElementById('prefWarn').innerHTML = warn.join('<br><br>');
+}
+
+/* ============ events ============ */
+document.addEventListener('input', function(e){
+  var el=e.target;
+  if(el.tagName!=='INPUT') return;
+  var scope=el.dataset.scope; if(!scope) return;
+  var kind=el.dataset.kind, key=el.dataset.key;
+  var val = kind==='s' ? el.value : (kind==='p' ? n(el.value)/100 : n(el.value));
+  if(scope==='g') g[key]=val;
+  else if(scope==='cap') cap[key]=val;
+  else if(scope==='partner'){
+    if(key==='exitYear') val=Math.max(1,Math.min(30,Math.round(val)));
+    partner[key]=val;
+  }
+  else if(scope==='door'){
+    var d=doors.filter(function(x){return x.id===el.dataset.did;})[0];
+    if(d) d[key]=val;
+  }
+  render();
+});
+document.addEventListener('change', function(e){
+  if(e.target.id==='lossSel'){ partner.lossProRata = n(e.target.value); render(); }
+});
+document.addEventListener('click', function(e){
+  var t=e.target;
+  if(t.dataset && t.dataset.tab){
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(b){b.classList.toggle('on',b===t);});
+    Array.prototype.forEach.call(document.querySelectorAll('.panel'),function(p){
+      p.classList.toggle('on', p.id==='p-'+t.dataset.tab);});
+  }
+  if(t.dataset && t.dataset.rm){
+    doors=doors.filter(function(d){return d.id!==t.dataset.rm;});
+    buildDoors(); render();
+  }
+  if(t.id==='addDoor'){ doors.push(mkDoor(doors.length+1)); buildDoors(); render(); }
+  if(t.id==='dl'){ downloadCSV(); }
+});
+
+/* RFC4180 quoting; leading =+-@ defused so a name can't execute in Excel. */
+function csvCell(v){
+  var s=String(v==null?'':v);
+  if(/^[=+\-@\t\r]/.test(s)) s="'"+s;
+  return '"'+s.replace(/"/g,'""')+'"';
+}
+function downloadCSV(){
+  var rs=window.__last.rs, port=window.__last.port;
+  var L=[];
+  L.push('RENTAL UNDERWRITER EXPORT,'+new Date().toLocaleDateString());
+  L.push('');
+  L.push('ASSUMPTIONS');
+  [['Deployable cash',g.cash],['Down payment',g.downPct],['Closing costs',g.closingPct],
+   ['Note rate',g.rate],['Amortization years',g.amYears],['Balloon years',g.balloonYears],
+   ['Vacancy',g.vacancyPct],['Management',g.pmPct],['Maintenance',g.maintPct],
+   ['Capex reserve',g.capexPct],['Reserve months PITI',g.reserveMonths],
+   ['Capex held per door',g.reserveCapexPerDoor],['DSCR gate',g.gateDSCR],['CoC gate',g.gateCoC]
+  ].forEach(function(p){L.push(p[0]+','+p[1]);});
+  L.push('');
+  L.push('PER DOOR');
+  L.push('Door,Price,Rent,Taxes,Insurance,HOA/mo,Make-ready,NOI,Capex reserve,Debt service,Lender DSCR,Adjusted DSCR,Cash flow,Cash in,CoC,Cap rate');
+  doors.forEach(function(d,i){ var r=rs[i];
+    L.push([csvCell(d.name),r.price,r.rent,r.taxes,r.ins,n(d.hoaMonthly),r.makeReady,
+      Math.round(r.noi),Math.round(r.capexRes),Math.round(r.ads),r.dscrLender.toFixed(3),
+      r.dscrAdj.toFixed(3),Math.round(r.cashFlow),Math.round(r.cashIn),
+      r.coc.toFixed(4),r.capRate.toFixed(4)].join(','));});
+  L.push('');
+  L.push('PORTFOLIO');
+  [['Net operating income',Math.round(port.noi)],['Debt service',Math.round(port.ads)],
+   ['Lender DSCR',port.dscrLender.toFixed(3)],['Reserve-adjusted DSCR',port.dscrAdj.toFixed(3)],
+   ['Annual cash flow',Math.round(port.cashFlow)],['Total cash required',Math.round(port.cashIn)],
+   ['Cash-on-cash',port.coc.toFixed(4)],
+   ['Verdict',(port.passDSCR&&port.passCoC&&port.passCash)?'GO':'NO-GO']
+  ].forEach(function(p){L.push(p[0]+','+p[1]);});
+  var blob=new Blob([L.join('\n')],{type:'text/csv'});
+  var url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download='rental_underwriting.csv'; a.click(); URL.revokeObjectURL(url);
+}
+
+/* ============ init ============ */
+buildRail(); buildTabs(); buildDoors(); buildCapInputs(); buildPartnerInputs(); render();
+</script>
+</body>
+</html>

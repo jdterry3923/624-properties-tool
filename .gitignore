@@ -1,0 +1,9 @@
+.DS_Store
+node_modules/
+*.log
+
+# never commit real deal data
+*deal*.csv
+*deals*.csv
+rental_underwriting.csv
+scenarios/
