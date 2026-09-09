@@ -139,14 +139,33 @@
       <div class="panel on" id="p-doors">
         <div id="doorList"></div>
         <button class="btn" id="addDoor" style="margin:16px 0;">Add a door</button>
-        <div class="card"><div class="cardBody">
+        <div class="card" style="margin-bottom:16px;"><div class="cardBody">
           <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Portfolio</div>
           <div class="two" id="portOut"></div>
+        </div></div>
+        <div class="card"><div class="cardBody">
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;" id="retTitle">Full cycle</div>
+          <div class="two" id="retOut"></div>
+          <div class="prose" style="margin-top:12px;" id="retNote"></div>
         </div></div>
       </div>
 
       <div class="panel" id="p-solve"></div>
       <div class="panel" id="p-balloon"></div>
+
+      <div class="panel" id="p-brrrr">
+        <div class="card" style="margin-bottom:16px;"><div class="cardBody">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Buy distressed, rehab, refinance</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">
+            Cash or hard money in, heavy rehab, then a refinance against the after-repair value
+            to pull your capital back out. The deal is judged on what is left in and what it earns.</div>
+          <div class="inGrid" style="grid-template-columns:repeat(3,1fr);" id="brInputs"></div>
+        </div></div>
+        <div class="card" style="margin-bottom:16px;"><div class="cardBody">
+          <div class="two" id="brOut"></div>
+        </div></div>
+        <div class="card"><div class="cardBody"><div class="prose" id="brProse"></div></div></div>
+      </div>
 
       <div class="panel" id="p-capacity">
         <div class="card" style="margin-bottom:16px;"><div class="cardBody">
@@ -196,7 +215,8 @@ var g = {
   reserveMonths:3, reserveCapexPerDoor:3000,
   rentGrowth:.02, expenseGrowth:.03, appreciation:.015,
   refiStressBump:.02, refiMaxLTV:.75,
-  gateDSCR:1.25, gateCoC:.08,
+  gateCashPerDoor:200, gateDSCR:1.25,
+  holdYears:5, sellCostPct:.06,
   taxRatePct:.022, insDefault:2200
 };
 var uid = 0;
@@ -207,6 +227,9 @@ function mkDoor(n, price, rent){
 }
 var doors = [mkDoor(1), mkDoor(2,135000,1325)];
 var cap = {price:145000, rent:1425};
+var brrrr = {price:95000, rehab:45000, arv:185000, rent:1750,
+  holdMonths:6, hardRate:.11, refiLTV:.75, refiRate:.075, refiAm:30,
+  taxAnnual:4070, insAnnual:2200};
 var partner = {lpCapital:60000, gpCapital:60000, prefRate:.09, lpCashShare:.30, lpExitShare:.30,
   exitYear:5, lossProRata:1};
 
@@ -253,7 +276,9 @@ function calcDoor(d,gg){
     coc: cashIn>0? cashFlow/cashIn : 0,
     capRate: allIn>0? noi/allIn : 0,
     rentToPrice: price>0? rent/price : 0,
-    passDSCR: dscrAdj>=gg.gateDSCR, passCoC: (cashIn>0?cashFlow/cashIn:0)>=gg.gateCoC};
+    cashPerMonth: cashFlow/12,
+    passDSCR: dscrAdj>=gg.gateDSCR,
+    passCash: (cashFlow/12)>=gg.gateCashPerDoor};
 }
 function calcPort(rs,gg){
   var s={gsi:0,egi:0,noi:0,capexRes:0,ads:0,cashFlow:0,cashIn:0,loan:0,price:0,allIn:0,
@@ -264,7 +289,14 @@ function calcPort(rs,gg){
   s.coc = s.cashIn>0? s.cashFlow/s.cashIn : 0;
   s.capRate = s.allIn>0? s.noi/s.allIn : 0;
   s.headroom = gg.cash - s.cashIn;
-  s.passDSCR = s.dscrAdj>=gg.gateDSCR; s.passCoC = s.coc>=gg.gateCoC; s.passCash = s.headroom>=0;
+  s.doorCount = rs.length;
+  s.cashPerDoorMonth = rs.length>0 ? (s.cashFlow/12)/rs.length : 0;
+  /* Every door must clear the dollar floor on its own — a strong door
+     must not carry a weak one past the gate. */
+  s.weakDoors = rs.filter(function(r){ return !r.passCash; }).length;
+  s.passCashFloor = rs.length>0 && s.weakDoors===0;
+  s.passDSCR = s.dscrAdj>=gg.gateDSCR;
+  s.passCapital = s.headroom>=0;
   var worst=null; rs.forEach(function(r){ if(!worst||r.gsi>worst.gsi) worst=r; });
   s.stressCF = s.cashFlow - (worst? worst.gsi*0.25 : 0);
   s.stressYears = (s.stressCF<0 && s.reserveHold>0)? s.reserveHold/(-s.stressCF) : Infinity;
@@ -280,6 +312,34 @@ function projectYear(port,gg,t){
   var opex = fixed+vari;
   var capex= egi*gg.capexPct;
   return {egi:egi, opex:opex, noi:egi-opex, capex:capex, cashFlow:egi-opex-capex-port.ads};
+}
+/* Full-cycle returns: hold, then sell. Charges the selling cost.
+   Returns the decomposition so you can see where the money came from. */
+function calcReturns(doorsArr,port,gg){
+  var t=Math.max(1,Math.round(gg.holdYears));
+  var cumCF=0, flows=[-port.cashIn];
+  for(var y=0;y<t;y++){ var p=projectYear(port,gg,y); cumCF+=p.cashFlow; flows.push(p.cashFlow); }
+  var value=doorsArr.reduce(function(a,d){return a+n(d.price)*Math.pow(1+gg.appreciation,t);},0);
+  var bal=doorsArr.reduce(function(a,d){return a+balAfter(n(d.price)*(1-gg.downPct),gg.rate,gg.amYears,t*12);},0);
+  var paydown=port.loan-bal;
+  var apprec=value-port.price;
+  var sellCost=value*gg.sellCostPct;
+  var netSale=value-sellCost-bal;
+  flows[flows.length-1]+=netSale;
+  var profit=cumCF+netSale-port.cashIn;
+  var mult=port.cashIn>0?(cumCF+netSale)/port.cashIn:0;
+  return {years:t, cumCF:cumCF, value:value, bal:bal, paydown:paydown, apprec:apprec,
+    sellCost:sellCost, netSale:netSale, profit:profit, mult:mult,
+    irr:irr(flows), flows:flows};
+}
+/* IRR by bisection on NPV. Returns null when the sign never flips. */
+function irr(flows){
+  function npv(r){ var s=0; for(var i=0;i<flows.length;i++) s+=flows[i]/Math.pow(1+r,i); return s; }
+  var lo=-0.95, hi=3;
+  if(npv(lo)*npv(hi)>0) return null;
+  for(var i=0;i<200;i++){ var m=(lo+hi)/2;
+    if(npv(lo)*npv(m)<=0) hi=m; else lo=m; }
+  return (lo+hi)/2;
 }
 function bisect(f,lo,hi,goal){
   var fa=f(lo)-goal, fb=f(hi)-goal;
@@ -314,9 +374,12 @@ var FIELDS_RAIL = [
   ['p','appreciation','Appreciation','','%/yr',0.5,''],
   ['p','refiStressBump','Refi rate stress','','+pts',0.25,''],
   ['p','refiMaxLTV','Refi max LTV','','%',5,''],
+  ['grp','Exit'],
+  ['n','holdYears','Hold period','','yr',1,'Drives IRR and total profit.'],
+  ['p','sellCostPct','Selling costs','','%',0.5,'Commission and closing at sale.'],
   ['grp','Gates'],
-  ['n','gateDSCR','Reserve-adjusted DSCR','','x',0.05,''],
-  ['p','gateCoC','Cash-on-cash','','%',0.5,'']
+  ['n','gateCashPerDoor','Net cash per door','$','/mo',25,'The primary gate. Every door must clear it on its own.'],
+  ['n','gateDSCR','Reserve-adjusted DSCR','','x',0.05,'Solvency guardrail — catches lazy capital on pricier houses.']
 ];
 function fieldHTML(kind,key,label,pre,suf,step,hint,val,scope,did){
   var v = kind==='p'? (val*100).toFixed(2).replace(/\.?0+$/,'') : val;
@@ -341,8 +404,8 @@ function buildRail(){
   h+='<button class="btn pri" id="dl">Download the numbers</button>';
   document.getElementById('railBody').innerHTML=h;
 }
-var TABS=[['doors','Doors'],['solve','What would make it work'],['balloon','Balloon'],
-          ['capacity','Capacity'],['partners','Partners']];
+var TABS=[['doors','Doors'],['solve','What would make it work'],['brrrr','BRRRR'],
+          ['balloon','Balloon'],['capacity','Capacity'],['partners','Partners']];
 function buildTabs(){
   document.getElementById('tabs').innerHTML = TABS.map(function(t,i){
     return '<button class="tab'+(i===0?' on':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>';}).join('');
@@ -363,6 +426,20 @@ function buildDoors(){
         fieldHTML('n','makeReady','Make-ready','$','',500,'',d.makeReady,'door',d.id)+
       '</div><div id="out-'+d.id+'"></div></div></div>';
   }).join('');
+}
+function buildBrInputs(){
+  document.getElementById('brInputs').innerHTML =
+    fieldHTML('n','price','Purchase price','$','',5000,'Distressed basis.',brrrr.price,'brrrr')+
+    fieldHTML('n','rehab','Rehab budget','$','',5000,'Scope it high; overruns are the norm.',brrrr.rehab,'brrrr')+
+    fieldHTML('n','arv','After-repair value','$','',5000,'Pressure-test against real comps.',brrrr.arv,'brrrr')+
+    fieldHTML('n','rent','Rent after rehab','$','',25,'',brrrr.rent,'brrrr')+
+    fieldHTML('n','holdMonths','Rehab months','','mo',1,'Carry cost runs the whole time.',brrrr.holdMonths,'brrrr')+
+    fieldHTML('p','hardRate','Acquisition rate','','%',0.25,'Hard money or short-term note. 0 if all cash.',brrrr.hardRate,'brrrr')+
+    fieldHTML('p','refiLTV','Refi LTV','','%',5,'Of ARV. Most lenders cap at 75%.',brrrr.refiLTV,'brrrr')+
+    fieldHTML('p','refiRate','Refi rate','','%',0.125,'',brrrr.refiRate,'brrrr')+
+    fieldHTML('n','refiAm','Refi amortization','','yr',1,'',brrrr.refiAm,'brrrr')+
+    fieldHTML('n','taxAnnual','Annual taxes','$','',100,'Reassessed at ARV, not purchase.',brrrr.taxAnnual,'brrrr')+
+    fieldHTML('n','insAnnual','Annual insurance','$','',100,'',brrrr.insAnnual,'brrrr');
 }
 function buildCapInputs(){
   document.getElementById('capInputs').innerHTML =
@@ -390,7 +467,8 @@ function buildPartnerInputs(){
 function render(){
   var rs = doors.map(function(d){ return calcDoor(d,g); });
   var port = calcPort(rs,g);
-  var ok = port.passDSCR && port.passCoC && port.passCash;
+  var ret = calcReturns(doors,port,g);
+  var ok = port.passCashFloor && port.passDSCR && port.passCapital;
 
   /* verdict */
   var bar=document.getElementById('verdictBar');
@@ -398,23 +476,34 @@ function render(){
   document.getElementById('vLabel').textContent='Verdict on '+doors.length+' door'+(doors.length===1?'':'s');
   document.getElementById('vBig').textContent = ok?'GO':'NO-GO';
   document.getElementById('vGates').innerHTML =
+    '<span>Net cash <strong>'+usd(port.cashPerDoorMonth)+'/door/mo</strong> '+(port.passCashFloor?'✓':'✗')+
+      ' <span class="dim">vs '+usd(g.gateCashPerDoor)+'</span></span>'+
     '<span>Adj DSCR <strong>'+mx(port.dscrAdj)+'</strong> '+(port.passDSCR?'✓':'✗')+' <span class="dim">vs '+mx(g.gateDSCR)+'</span></span>'+
-    '<span>Cash-on-cash <strong>'+pc(port.coc)+'</strong> '+(port.passCoC?'✓':'✗')+' <span class="dim">vs '+pc(g.gateCoC,0)+'</span></span>'+
-    '<span>Cash needed <strong>'+usd(port.cashIn)+'</strong> '+(port.passCash?'✓':'✗')+' <span class="dim">of '+usd(g.cash)+'</span></span>';
-  document.getElementById('vNote').innerHTML = ok?'' :
-    (!port.passCash?'Short '+usd(-port.headroom)+' of cash. ':'')+
-    (!port.passDSCR?'Coverage is '+mx(port.dscrAdj)+' against a '+mx(g.gateDSCR)+' gate. ':'')+
-    (!port.passCoC?'Return is '+pc(port.coc)+' against an '+pc(g.gateCoC,0)+' gate. ':'')+
-    'Open “What would make it work” for the exact number each lever has to hit.';
+    '<span>Cash needed <strong>'+usd(port.cashIn)+'</strong> '+(port.passCapital?'✓':'✗')+' <span class="dim">of '+usd(g.cash)+'</span></span>';
+  document.getElementById('vNote').innerHTML = ok
+    ? 'Clears every gate. Over '+ret.years+' years this returns '+usd(ret.profit)+
+      ' on '+usd(port.cashIn)+' in — a '+mx(ret.mult)+' multiple, '+
+      (ret.irr!==null?pc(ret.irr):'—')+' IRR. Verify taxes, insurance, and rent against real documents before you commit.'
+    : (!port.passCashFloor
+        ? (port.weakDoors===doors.length
+            ? 'No door clears '+usd(g.gateCashPerDoor)+'/mo. '
+            : port.weakDoors+' of '+doors.length+' doors miss the '+usd(g.gateCashPerDoor)+'/mo floor. ')
+        : '')+
+      (!port.passDSCR?'Coverage is '+mx(port.dscrAdj)+' against a '+mx(g.gateDSCR)+' gate. ':'')+
+      (!port.passCapital?'Short '+usd(-port.headroom)+' of cash. ':'')+
+      'Open “What would make it work” for the exact number each lever has to hit.';
 
   /* stats */
   function stat(l,v,tone,s){ return '<div class="stat"><div class="l">'+l+'</div><div class="v'+
     (tone?' '+tone:'')+'">'+v+'</div>'+(s?'<div class="s">'+s+'</div>':'')+'</div>'; }
   document.getElementById('stats').innerHTML =
-    stat('Monthly cash flow', usd(port.cashFlow/12), port.cashFlow>=0?'pass':'fail', usd(port.cashFlow)+'/yr after reserves')+
-    stat('Lender DSCR', mx(port.dscrLender),'', 'what a bank would compute')+
-    stat('Cap rate', pc(port.capRate),'', 'on '+usd(port.allIn)+' all-in')+
-    stat('Total debt', usd(port.loan),'', usd(port.ads/12)+'/mo service')+
+    stat('Net cash per door', usd(port.cashPerDoorMonth)+'/mo', port.passCashFloor?'pass':'fail',
+      'gate is '+usd(g.gateCashPerDoor)+' — '+(port.weakDoors===0?'all doors clear':port.weakDoors+' short'))+
+    stat('Total profit, '+ret.years+' yr', usd(ret.profit), ret.profit>=0?'pass':'fail',
+      mx(ret.mult)+' on '+usd(port.cashIn)+' in')+
+    stat('IRR', ret.irr!==null?pc(ret.irr):'—', ret.irr!==null&&ret.irr>=0.10?'pass':(ret.irr!==null&&ret.irr>=0?'warn':'fail'),
+      'annualized, after selling costs')+
+    stat('Cash-on-cash', pc(port.coc), port.coc>=0?'':'fail', 'year one, reported not gated')+
     stat('One door dark 3 mo', usd(port.stressCF), port.stressCF>=0?'pass':'warn',
       port.stressCF>=0?'still positive':'reserves cover '+(isFinite(port.stressYears)?port.stressYears.toFixed(1):'—')+' yr');
 
@@ -423,8 +512,9 @@ function render(){
     var r=rs[i];
     var tags=document.getElementById('tags-'+d.id);
     if(tags) tags.innerHTML =
+      '<span class="'+(r.passCash?'pass':'fail')+'">'+usd(r.cashPerMonth)+'/mo</span>'+
       '<span class="'+(r.passDSCR?'pass':'fail')+'">DSCR '+mx(r.dscrAdj)+'</span>'+
-      '<span class="'+(r.passCoC?'pass':'fail')+'">CoC '+pc(r.coc)+'</span>'+
+      '<span style="color:var(--faint)">CoC '+pc(r.coc)+'</span>'+
       '<span style="color:var(--faint)">'+(r.rentToPrice*100).toFixed(2)+'% rent/price</span>'+
       (doors.length>1?'<button class="lnk" data-rm="'+d.id+'">remove</button>':'');
     var out=document.getElementById('out-'+d.id);
@@ -441,6 +531,8 @@ function render(){
       row('Capex reserve',usd(-r.capexRes),{i:1})+
       row('Debt service',usd(-r.ads),{i:1})+
       row('Cash flow',usd(r.cashFlow),{b:1,tone:r.cashFlow>=0?'pass':'fail'})+
+      row('Per month',usd(r.cashPerMonth)+' vs '+usd(g.gateCashPerDoor)+' gate',
+        {i:1,tone:r.passCash?'pass':'fail'})+
       '<div style="height:12px"></div>'+
       row('Cash to acquire',usd(r.cashIn),{b:1})+
       row('Down payment',usd(r.down),{i:1})+
@@ -465,11 +557,38 @@ function render(){
       row('Cash required',usd(port.cashIn),{b:1})+
       row('Cash available',usd(g.cash))+
       row(port.headroom>=0?'Headroom':'Shortfall',usd(Math.abs(port.headroom)),{b:1,tone:port.headroom>=0?'pass':'fail'})+
+      row('Net cash per door / mo',usd(port.cashPerDoorMonth),{b:1,tone:port.passCashFloor?'pass':'fail'})+
       row('Reserve-adjusted DSCR',mx(port.dscrAdj),{b:1,tone:port.passDSCR?'pass':'fail'})+
-      row('Cash-on-cash',pc(port.coc),{b:1,tone:port.passCoC?'pass':'fail'})+
+      row('Cash-on-cash',pc(port.coc))+
+      row('Lender DSCR',mx(port.dscrLender))+
+      row('Cap rate',pc(port.capRate))+
     '</div>';
 
+  document.getElementById('retOut').innerHTML =
+    '<div>'+
+      row('Cash flow over '+ret.years+' yr',usd(ret.cumCF))+
+      row('Principal paydown',usd(ret.paydown))+
+      row('Appreciation',usd(ret.apprec))+
+      row('Selling costs',usd(-ret.sellCost),{i:1})+
+      row('Net sale proceeds',usd(ret.netSale),{b:1})+
+    '</div><div>'+
+      row('Cash invested',usd(port.cashIn))+
+      row('Total profit',usd(ret.profit),{b:1,tone:ret.profit>=0?'pass':'fail'})+
+      row('Equity multiple',mx(ret.mult),{b:1})+
+      row('IRR',ret.irr!==null?pc(ret.irr):'—',{b:1,tone:ret.irr!==null&&ret.irr>=0.10?'pass':'warn'})+
+      row('Sale price in year '+ret.years,usd(ret.value))+
+      row('Loan balance then',usd(ret.bal))+
+    '</div>';
+  var driver = ret.cumCF+ret.paydown+ret.apprec;
+  document.getElementById('retNote').innerHTML = driver<=0 ? '' :
+    'Of the gross gain, '+pc(ret.cumCF/driver,0)+' is cash flow, '+pc(ret.paydown/driver,0)+
+    ' is your tenant paying down principal, and '+pc(ret.apprec/driver,0)+' is appreciation — '+
+    'the one line you do not control. Selling costs take '+usd(ret.sellCost)+' off the top. '+
+    (ret.apprec/driver>0.4 ? 'Appreciation is carrying too much of this thesis. Set it to zero and see whether the deal still stands.'
+                           : 'The return rests mostly on things you control, which is where you want it.');
+
   renderSolve(port);
+  renderBrrrr();
   renderBalloon(port);
   renderCapacity();
   renderPartners(port);
@@ -478,52 +597,77 @@ function render(){
 
 /* ---- solve ---- */
 function renderSolve(port){
-  function portDSCR(ds,gg){
+  /* Each lever is solved twice — once to the DSCR gate, once to the cash floor —
+     and we report whichever demands more, because the deal must clear both. */
+  function pm_(ds,gg){
     var rs=ds.map(function(d){return calcDoor(d,gg);});
-    var noi=0,cx=0,ads=0;
-    rs.forEach(function(r){noi+=r.noi;cx+=r.capexRes;ads+=r.ads;});
-    return ads>0?(noi-cx)/ads:Infinity;
+    var noi=0,cx=0,ads=0,cf=0;
+    rs.forEach(function(r){noi+=r.noi;cx+=r.capexRes;ads+=r.ads;cf+=r.cashFlow;});
+    return {dscr: ads>0?(noi-cx)/ads:Infinity,
+            cashPer: rs.length>0?(cf/12)/rs.length:0};
   }
-  var scaleP=function(f){ return doors.map(function(d){
-    return Object.assign({},d,{price:n(d.price)*f, taxAnnual:n(d.taxAnnual)*f});}); };
-  var scaleR=function(f){ return doors.map(function(d){
-    return Object.assign({},d,{rent:n(d.rent)*f});}); };
+  /* Solve one lever against both gates; return the binding answer. */
+  function solveBoth(fn,lo,hi,harderIsHigher){
+    var a=bisect(function(x){return pm_.call(null,fn(x).ds,fn(x).gg).dscr;},lo,hi,g.gateDSCR);
+    var b=bisect(function(x){return pm_.call(null,fn(x).ds,fn(x).gg).cashPer;},lo,hi,g.gateCashPerDoor);
+    if(a===null&&b===null) return null;
+    if(a===null) return {v:b,bind:'cash floor'};
+    if(b===null) return {v:a,bind:'DSCR'};
+    /* harderIsHigher: for rent, a higher value is the stricter requirement.
+       For price/rate, a lower value is stricter. */
+    var pick = harderIsHigher ? Math.max(a,b) : Math.min(a,b);
+    return {v:pick, bind: (pick===b?'cash floor':'DSCR')};
+  }
+  var scaleP=function(f){ return {ds:doors.map(function(d){
+    return Object.assign({},d,{price:n(d.price)*f, taxAnnual:n(d.taxAnnual)*f});}), gg:g}; };
+  var scaleR=function(f){ return {ds:doors.map(function(d){
+    return Object.assign({},d,{rent:n(d.rent)*f});}), gg:g}; };
 
   var out=[];
   var totalPrice=port.price, totalRent=doors.reduce(function(a,d){return a+n(d.rent);},0);
 
-  var pf=bisect(function(x){return portDSCR(scaleP(x),g);},0.25,1.8,g.gateDSCR);
-  if(pf!==null) out.push({lever:'Purchase price',from:usd(totalPrice),to:usd(totalPrice*pf),
-    note:(pf<1?'cut ':'room to raise ')+pc(Math.abs(1-pf))+' — scaled proportionally across doors.'});
+  var pfR=solveBoth(scaleP,0.25,1.8,false);
+  if(pfR){ var pf=pfR.v;
+    out.push({lever:'Purchase price',from:usd(totalPrice),to:usd(totalPrice*pf),
+      note:(pf<1?'cut ':'room to raise ')+pc(Math.abs(1-pf))+' — scaled proportionally across doors. '+
+      pfR.bind+' is the binding gate.'}); }
 
-  var rf=bisect(function(x){return portDSCR(scaleR(x),g);},0.5,2.5,g.gateDSCR);
-  if(rf!==null) out.push({lever:'Monthly rent, all doors',from:usd(totalRent),to:usd(totalRent*rf),
-    note:(rf>1?'needs ':'cushion of ')+pc(Math.abs(rf-1))+' — pressure-test against real comps before relying on it.'});
+  var rfR=solveBoth(scaleR,0.5,2.5,true);
+  if(rfR){ var rf=rfR.v;
+    out.push({lever:'Monthly rent, all doors',from:usd(totalRent),to:usd(totalRent*rf),
+      note:(rf>1?'needs ':'cushion of ')+pc(Math.abs(rf-1))+' — '+rfR.bind+
+      ' binds. Pressure-test against real comps before relying on it.'}); }
 
-  var rs_=bisect(function(x){return portDSCR(doors,Object.assign({},g,{rate:x}));},0.0001,g.rate+0.12,g.gateDSCR);
-  if(rs_!==null) out.push({lever:'Seller note rate',from:pc(g.rate,2),to:pc(rs_,2),
-    note:(rs_<g.rate?'must come down ':'room to go up ')+(Math.abs(rs_-g.rate)*100).toFixed(2)+
-    ' pts — the cheapest thing to negotiate, and it costs the seller less than a price cut.'});
+  var rtR=solveBoth(function(x){return {ds:doors,gg:Object.assign({},g,{rate:x})};},0.0001,g.rate+0.12,false);
+  if(rtR){ var rs_=rtR.v;
+    out.push({lever:'Seller note rate',from:pc(g.rate,2),to:pc(rs_,2),
+      note:(rs_<g.rate?'must come down ':'room to go up ')+(Math.abs(rs_-g.rate)*100).toFixed(2)+
+      ' pts — the cheapest thing to negotiate, and it costs the seller less than a price cut.'}); }
 
-  var am=bisect(function(x){return portDSCR(doors,Object.assign({},g,{amYears:x}));},5,40,g.gateDSCR);
-  if(am!==null) out.push({lever:'Amortization',from:g.amYears+' yr',to:am.toFixed(1)+' yr',
-    note:(am>g.amYears?'stretch '+(am-g.amYears).toFixed(1)+' yr':'cushion of '+(g.amYears-am).toFixed(1)+' yr')+
-    ' — lowers the payment without touching price.'});
+  var amR=solveBoth(function(x){return {ds:doors,gg:Object.assign({},g,{amYears:x})};},5,40,true);
+  if(amR){ var am=amR.v;
+    out.push({lever:'Amortization',from:g.amYears+' yr',to:am.toFixed(1)+' yr',
+      note:(am>g.amYears?'stretch '+(am-g.amYears).toFixed(1)+' yr':'cushion of '+(g.amYears-am).toFixed(1)+' yr')+
+      ' — lowers the payment without touching price.'}); }
 
-  var dp=bisect(function(x){return portDSCR(doors,Object.assign({},g,{downPct:x}));},0,0.85,g.gateDSCR);
-  if(dp!==null){
-    var alt=calcPort(doors.map(function(d){return calcDoor(d,Object.assign({},g,{downPct:dp}));}),g);
+  var dpR=solveBoth(function(x){return {ds:doors,gg:Object.assign({},g,{downPct:x})};},0,0.85,true);
+  if(dpR){ var dp=dpR.v;
+    var altG=Object.assign({},g,{downPct:dp});
+    var alt=calcPort(doors.map(function(d){return calcDoor(d,altG);}),altG);
     out.push({lever:'Down payment',from:pc(g.downPct,0),to:pc(dp),
-      note:'needs '+usd(alt.cashIn)+' of cash and drops cash-on-cash to '+pc(alt.coc)+'.'});
-  }
-  var ex=bisect(function(x){return portDSCR(doors,Object.assign({},g,
-    {pmPct:g.pmPct*x,maintPct:g.maintPct*x,capexPct:g.capexPct*x}));},0.05,2,g.gateDSCR);
-  if(ex!==null && ex<1) out.push({lever:'Operating load',
-    from:pc(g.pmPct+g.maintPct+g.capexPct)+' of income', to:pc((g.pmPct+g.maintPct+g.capexPct)*ex)+' of income',
-    note:'self-managing saves '+pc(g.pmPct,0)+'. Real work, not free money — only count it if you will actually do it.'});
+      note:'needs '+usd(alt.cashIn)+' of cash'+(alt.cashIn>g.cash?' — which is '+usd(alt.cashIn-g.cash)+' more than you have':'')+
+      ', and drops cash-on-cash to '+pc(alt.coc)+'.'}); }
+
+  var exR=solveBoth(function(x){return {ds:doors,gg:Object.assign({},g,
+    {pmPct:g.pmPct*x,maintPct:g.maintPct*x,capexPct:g.capexPct*x})};},0.05,2,false);
+  if(exR && exR.v<1){ var ex=exR.v;
+    out.push({lever:'Operating load',
+      from:pc(g.pmPct+g.maintPct+g.capexPct)+' of income', to:pc((g.pmPct+g.maintPct+g.capexPct)*ex)+' of income',
+      note:'self-managing saves '+pc(g.pmPct,0)+'. Real work, not free money — only count it if you will actually do it.'}); }
 
   var h='<div class="card"><div style="padding:12px 16px;border-bottom:1px solid var(--rule);">'+
-    '<div style="font-size:13px;font-weight:600;">Each lever, solved to a reserve-adjusted DSCR of '+mx(g.gateDSCR)+'</div>'+
+    '<div style="font-size:13px;font-weight:600;">Each lever, solved to clear both gates — '+
+      usd(g.gateCashPerDoor)+'/door/mo and '+mx(g.gateDSCR)+' coverage</div>'+
     '<div style="font-size:12px;color:var(--muted);margin-top:4px;">One at a time, everything else held constant. Combine two and you need less of each.</div></div>';
   if(out.length===0){
     h+='<div style="padding:24px 16px;font-size:13px;color:var(--muted);">No lever crosses the gate inside a sane range. The gap is structural — price and rent are too far apart for any single term to close.</div>';
@@ -593,19 +737,127 @@ function renderBalloon(port){
     '<div class="card"><div class="tip">A seller-carried note with a short balloon transfers the refinance risk entirely to you. Term length is the most valuable thing to negotiate here, and it costs the seller almost nothing to give.</div></div>';
 }
 
+/* ---- BRRRR ---- */
+function renderBrrrr(){
+  var b=brrrr;
+  var price=n(b.price), rehab=n(b.rehab), arv=n(b.arv), rent=n(b.rent);
+  var months=Math.max(0,n(b.holdMonths));
+
+  /* Money in. Acquisition closing on the purchase, refi closing on the new loan. */
+  var acqClosing=price*g.closingPct;
+  var carryRate=n(b.hardRate);
+  var carryInterest=price*carryRate*(months/12);
+  var carryTaxIns=(n(b.taxAnnual)+n(b.insAnnual))*(months/12);
+  var holdingCost=carryInterest+carryTaxIns;
+  var allIn=price+rehab+acqClosing+holdingCost;
+
+  /* Refi out */
+  var refiLoan=arv*n(b.refiLTV);
+  var refiClosing=refiLoan*0.02;
+  var cashOut=refiLoan-refiClosing;
+  var leftIn=allIn-cashOut;
+  var recovered= allIn>0 ? Math.min(cashOut/allIn,1) : 0;
+
+  /* Steady state after refi */
+  var gsi=rent*12, vac=gsi*g.vacancyPct, egi=gsi-vac;
+  var mgmt=egi*g.pmPct, maint=egi*g.maintPct;
+  var opex=n(b.taxAnnual)+n(b.insAnnual)+mgmt+maint;
+  var noi=egi-opex, capexRes=egi*g.capexPct;
+  var pm=pmt(refiLoan,n(b.refiRate),n(b.refiAm)), ads=pm*12;
+  var dscrAdj= ads>0?(noi-capexRes)/ads:Infinity;
+  var dscrLender= ads>0? noi/ads : Infinity;
+  var cf=noi-capexRes-ads;
+  var piti=pm+(n(b.taxAnnual)+n(b.insAnnual))/12;
+  var reserveHold=g.reserveMonths*piti+g.reserveCapexPerDoor;
+  /* Capital actually committed: what stayed in the deal plus reserves you must hold. */
+  var committed=Math.max(leftIn,0)+reserveHold;
+  var coc= committed>0? cf/committed : Infinity;
+
+  var passCash=(cf/12)>=g.gateCashPerDoor;
+  var passDSCR=dscrAdj>=g.gateDSCR;
+  var equity=arv-refiLoan;
+  var ok=passCash&&passDSCR;
+
+  document.getElementById('brOut').innerHTML =
+    '<div>'+
+      row('Purchase',usd(price))+
+      row('Rehab',usd(rehab),{i:1})+
+      row('Acquisition closing',usd(acqClosing),{i:1})+
+      row('Holding '+months+' mo (interest + tax/ins)',usd(holdingCost),{i:1})+
+      row('All-in before refi',usd(allIn),{b:1})+
+      '<div style="height:12px"></div>'+
+      row('ARV',usd(arv))+
+      row('Refi loan at '+pc(n(b.refiLTV),0)+' LTV',usd(refiLoan),{i:1})+
+      row('Refi closing',usd(-refiClosing),{i:1})+
+      row('Cash back at refi',usd(cashOut),{b:1})+
+      row('Capital left in',usd(leftIn),{b:1,tone:leftIn<=0?'pass':(leftIn<20000?'warn':'fail')})+
+      row('Capital recovered',pc(recovered,0),{b:1,tone:recovered>=1?'pass':'warn'})+
+    '</div><div>'+
+      row('Effective gross income',usd(egi))+
+      row('Operating expenses',usd(-opex),{i:1})+
+      row('Net operating income',usd(noi),{b:1})+
+      row('Capex reserve',usd(-capexRes),{i:1})+
+      row('Debt service',usd(-ads),{i:1})+
+      row('Annual cash flow',usd(cf),{b:1,tone:cf>=0?'pass':'fail'})+
+      row('Net cash per month',usd(cf/12)+' vs '+usd(g.gateCashPerDoor),{b:1,tone:passCash?'pass':'fail'})+
+      row('Reserve-adjusted DSCR',mx(dscrAdj),{b:1,tone:passDSCR?'pass':'fail'})+
+      row('Lender DSCR',mx(dscrLender))+
+      '<div style="height:12px"></div>'+
+      row('Reserves to hold',usd(reserveHold))+
+      row('Capital committed',usd(committed),{b:1})+
+      row('Cash-on-cash on committed',isFinite(coc)?pc(coc):'infinite',{b:1,
+        tone:(isFinite(coc)&&coc>0)||!isFinite(coc)?'pass':'fail'})+
+      row('Equity created',usd(equity),{b:1,tone:equity>0?'pass':'fail'})+
+    '</div>';
+
+  /* The two things that kill a BRRRR: ARV comes in low, rehab runs over. */
+  var arvBreak = (allIn + reserveHold*0) / (n(b.refiLTV)*0.98);
+  var arvDown10=arv*0.90;
+  var loan10=arvDown10*n(b.refiLTV), out10=loan10-loan10*0.02;
+  var left10=allIn-out10;
+  var rehabOver=rehab*1.20;
+  var allIn20=price+rehabOver+acqClosing+holdingCost;
+  var left20=allIn20-cashOut;
+
+  var h='';
+  h+='<p><strong>'+(ok?'Clears both gates.':'Does not clear.')+'</strong> '+
+     (leftIn<=0
+       ? 'The refinance returns every dollar you put in and '+usd(-leftIn)+' beyond it, so the ongoing return is effectively infinite on zero committed capital — you still hold '+usd(reserveHold)+' in reserves.'
+       : 'You leave '+usd(leftIn)+' in the deal, '+pc(1-recovered,0)+' of what you put up.')+'</p>';
+  h+='<p><strong>ARV is the whole deal.</strong> To pull your full '+usd(allIn)+' back out at '+
+     pc(n(b.refiLTV),0)+' LTV, the appraisal has to come in at '+usd(arvBreak)+
+     '. You are underwriting '+usd(arv)+'. If it appraises 10% light at '+usd(arvDown10)+
+     ', you leave '+usd(left10)+' in instead of '+usd(leftIn)+'.</p>';
+  h+='<p><strong>Rehab overruns hit twice</strong> — more cash in, and no more loan out, because the loan is sized on ARV rather than on cost. A 20% overrun to '+
+     usd(rehabOver)+' leaves '+usd(left20)+' in the deal.</p>';
+  h+='<p>Get the appraisal comps before you close, not after the rehab. Seasoning rules mean many lenders will not refinance at ARV for six to twelve months — confirm the timeline in writing, because the carry cost above assumes '+
+     months+' months and nothing more. None of this is a substitute for a contractor bid and a lender term sheet.</p>';
+  document.getElementById('brProse').innerHTML=h;
+}
+
 /* ---- capacity ---- */
 function renderCapacity(){
   var proto={id:'proto',name:'Typical',price:cap.price,rent:cap.rent,
     taxAnnual:Math.round(cap.price*g.taxRatePct),insAnnual:g.insDefault,hoaMonthly:0,makeReady:4000};
   var r=calcDoor(proto,g);
   var doorsByCash=Math.floor(g.cash/r.cashIn);
-  var maxPrice=bisect(function(x){
+  /* Max price must satisfy BOTH gates, so take the lower of the two. */
+  var maxPriceD=bisect(function(x){
     var d=Object.assign({},proto,{price:x,taxAnnual:Math.round(x*g.taxRatePct)});
     return calcDoor(d,g).dscrAdj; }, cap.price*0.25, cap.price*1.8, g.gateDSCR);
-  var minRent=bisect(function(x){
+  var maxPriceC=bisect(function(x){
+    var d=Object.assign({},proto,{price:x,taxAnnual:Math.round(x*g.taxRatePct)});
+    return calcDoor(d,g).cashPerMonth; }, cap.price*0.25, cap.price*1.8, g.gateCashPerDoor);
+  var maxPrice = (maxPriceD===null||maxPriceC===null) ? (maxPriceD===null?maxPriceC:maxPriceD)
+                                                      : Math.min(maxPriceD,maxPriceC);
+  /* Min rent likewise must satisfy both, so take the higher. */
+  var minRentD=bisect(function(x){
     return calcDoor(Object.assign({},proto,{rent:x}),g).dscrAdj; }, cap.rent*0.4, cap.rent*3, g.gateDSCR);
-  var minRentCoC=bisect(function(x){
-    return calcDoor(Object.assign({},proto,{rent:x}),g).coc; }, cap.rent*0.4, cap.rent*3, g.gateCoC);
+  var minRentC=bisect(function(x){
+    return calcDoor(Object.assign({},proto,{rent:x}),g).cashPerMonth; }, cap.rent*0.4, cap.rent*3, g.gateCashPerDoor);
+  var minRent = (minRentD===null||minRentC===null) ? (minRentD===null?minRentC:minRentD)
+                                                   : Math.max(minRentD,minRentC);
+  var bindLabel = (minRentD!==null&&minRentC!==null) ? (minRentC>minRentD?'the cash floor':'DSCR') : '—';
 
   document.getElementById('capTitle').textContent='What '+usd(g.cash)+' actually buys';
   document.getElementById('capOut').innerHTML =
@@ -619,15 +871,15 @@ function renderCapacity(){
       row('Purchase power',usd(doorsByCash*cap.price))+
       row('Debt at that scale',usd(doorsByCash*r.loan),{b:1})+
     '</div><div>'+
+      row("This door's net cash / mo",usd(r.cashPerMonth),{b:1,tone:r.passCash?'pass':'fail'})+
       row("This door's adjusted DSCR",mx(r.dscrAdj),{b:1,tone:r.passDSCR?'pass':'fail'})+
-      row("This door's cash-on-cash",pc(r.coc),{b:1,tone:r.passCoC?'pass':'fail'})+
-      row('Monthly cash flow',usd(r.cashFlow/12),{tone:r.cashFlow>=0?'pass':'fail'})+
+      row("This door's cash-on-cash",pc(r.coc))+
       '<div style="height:12px"></div>'+
       row('Max price at this rent',maxPrice!==null?usd(maxPrice):'—',{b:1})+
       row('Min rent at this price',minRent!==null?usd(minRent):'—',{b:1})+
-      row('Min rent to hit '+pc(g.gateCoC,0)+' cash-on-cash',minRentCoC!==null?usd(minRentCoC):'—')+
+      row('Binding gate here',bindLabel)+
     '</div>';
-  document.getElementById('capProse').innerHTML = r.passDSCR
+  document.getElementById('capProse').innerHTML = (r.passDSCR&&r.passCash)
     ? '<p>Your cash, not the coverage, is the limit here. You could carry more debt than '+usd(doorsByCash*r.loan)+
       ' if you had more equity — which is the case for raising partner capital rather than stretching terms.</p>'
     : '<p>Coverage, not cash, is the limit. Buying more doors at these numbers just multiplies a deal that does not carry itself. Fix the price, the rent, or the terms first — more equity only buys a bigger version of the same problem.</p>';
@@ -716,6 +968,7 @@ document.addEventListener('input', function(e){
   var val = kind==='s' ? el.value : (kind==='p' ? n(el.value)/100 : n(el.value));
   if(scope==='g') g[key]=val;
   else if(scope==='cap') cap[key]=val;
+  else if(scope==='brrrr') brrrr[key]=val;
   else if(scope==='partner'){
     if(key==='exitYear') val=Math.max(1,Math.min(30,Math.round(val)));
     partner[key]=val;
@@ -760,7 +1013,9 @@ function downloadCSV(){
    ['Note rate',g.rate],['Amortization years',g.amYears],['Balloon years',g.balloonYears],
    ['Vacancy',g.vacancyPct],['Management',g.pmPct],['Maintenance',g.maintPct],
    ['Capex reserve',g.capexPct],['Reserve months PITI',g.reserveMonths],
-   ['Capex held per door',g.reserveCapexPerDoor],['DSCR gate',g.gateDSCR],['CoC gate',g.gateCoC]
+   ['Capex held per door',g.reserveCapexPerDoor],
+   ['Cash per door gate ($/mo)',g.gateCashPerDoor],['DSCR gate',g.gateDSCR],
+   ['Hold years',g.holdYears],['Selling cost',g.sellCostPct]
   ].forEach(function(p){L.push(p[0]+','+p[1]);});
   L.push('');
   L.push('PER DOOR');
@@ -776,7 +1031,9 @@ function downloadCSV(){
    ['Lender DSCR',port.dscrLender.toFixed(3)],['Reserve-adjusted DSCR',port.dscrAdj.toFixed(3)],
    ['Annual cash flow',Math.round(port.cashFlow)],['Total cash required',Math.round(port.cashIn)],
    ['Cash-on-cash',port.coc.toFixed(4)],
-   ['Verdict',(port.passDSCR&&port.passCoC&&port.passCash)?'GO':'NO-GO']
+   ['Net cash per door per month',Math.round(port.cashPerDoorMonth)],
+   ['Doors below cash floor',port.weakDoors],
+   ['Verdict',(port.passCashFloor&&port.passDSCR&&port.passCapital)?'GO':'NO-GO']
   ].forEach(function(p){L.push(p[0]+','+p[1]);});
   var blob=new Blob([L.join('\n')],{type:'text/csv'});
   var url=URL.createObjectURL(blob), a=document.createElement('a');
@@ -784,7 +1041,7 @@ function downloadCSV(){
 }
 
 /* ============ init ============ */
-buildRail(); buildTabs(); buildDoors(); buildCapInputs(); buildPartnerInputs(); render();
+buildRail(); buildTabs(); buildDoors(); buildBrInputs(); buildCapInputs(); buildPartnerInputs(); render();
 </script>
 </body>
 </html>

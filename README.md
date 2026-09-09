@@ -20,9 +20,11 @@ Enter real numbers in the browser at runtime. They never touch the file.
 
 Five modules, all driven off one set of assumptions:
 
-**Doors** — Per-property underwriting with a full income statement: gross rent through vacancy, operating expenses, NOI, capex reserve, debt service, and cash flow. Plus the cash required to acquire, broken into down payment, closing, make-ready, and held reserves.
+**Doors** — Per-property underwriting with a full income statement: gross rent through vacancy, operating expenses, NOI, capex reserve, debt service, and cash flow. Plus the cash required to acquire, and a full-cycle view: total profit, equity multiple, and IRR over the hold, with the return broken into cash flow, principal paydown, and appreciation.
 
-**What would make it work** — When a deal fails, each lever is solved independently to the exact value that clears the coverage gate: purchase price, rent, note rate, amortization, down payment, operating load. One at a time, everything else constant.
+**What would make it work** — When a deal fails, each lever is solved independently to the exact value that clears both gates: purchase price, rent, note rate, amortization, down payment, operating load. Each lever names which gate is binding.
+
+**BRRRR** — Distressed purchase, heavy rehab, then a refinance against after-repair value to pull capital back out. Reports all-in cost, cash recovered, capital left in the deal, and the post-refi cash flow against the same gates. Also solves the appraisal that would be required to recover everything, and shows what a 10% low appraisal or a 20% rehab overrun does to the capital left in.
 
 **Balloon** — Tests whether the deal can refinance when a seller-carried note comes due. Runs at the note rate plus a stress bump, against both an LTV ceiling and the coverage gate. Reports the cash shortfall at refi, plus the rate or appraised value that would be required to clear it. Set the balloon to 0 for a fully amortizing note and the tab reports no refi risk.
 
@@ -48,8 +50,8 @@ Two DSCR figures are shown because they differ meaningfully.
 
 | Setting | Default | Why |
 |---|---|---|
-| Reserve-adjusted DSCR | 1.25x | Strict by design. Approximately equal to a 1.45–1.55x lender DSCR. |
-| Cash-on-cash | 8% | Year one, after reserves. |
+| **Net cash per door** | **$200/month** | The primary gate. A dollar floor, matching the $50k minimum profit rule on flips. Every door must clear it on its own. |
+| Reserve-adjusted DSCR | 1.25x | Solvency guardrail. Approximately equal to a 1.45–1.55x lender DSCR. |
 | Reserves held | 3 months PITI + $3,000 per door | Leaner than a 6-month policy; the trade-off is less runway on a long vacancy. |
 | Expense growth | 3%/yr vs. 2% rent growth | Deliberately unfavorable. Fixed costs are assumed to outrun rents. |
 | Appreciation | 1.5%/yr | No thesis should depend on the market rising. |
@@ -57,7 +59,15 @@ Two DSCR figures are shown because they differ meaningfully.
 
 All are editable in the assumptions rail. Nothing is hardcoded.
 
-**Note on the DSCR gate:** at 20% down and a 7% note, a house at a 1.0% rent-to-price ratio will not clear 1.25x. Clearing it requires roughly 1.35–1.45%. That is not a bug — it means the deal has to come from price or terms, not from the market. If the gate produces NO-GO on everything, the question is whether the standard is right for the situation, not whether the tool is working.
+**Why two gates, and why these two.** Ratios and dollars fail in opposite directions, so each gate covers the other's blind spot.
+
+A ratio gate alone is blind to size. An $80,000 house throwing off $94 a month can post a healthy-looking DSCR and cash-on-cash while producing an amount of money that does not justify owning it — one appliance failure erases the year. The dollar floor catches that.
+
+A dollar gate alone is blind to capital efficiency. A $350,000 house can clear $200 a month while tying up $92,000 in cash — a 2.6% return, a savings account with a roof and a tenant. Reserve-adjusted DSCR catches that: at that point coverage is 1.11x, well under the 1.25x gate.
+
+At 20% down and a 7% note, the two cross at roughly $150,000. Below that the dollar floor binds; above it, DSCR binds. Cash-on-cash and IRR are reported but not gated, because both are largely a function of leverage and hold period rather than deal quality — a thin deal can post a fine IRR with enough leverage and enough years.
+
+**On rent-to-price:** clearing both gates takes roughly 1.35–1.45% rent-to-price at these terms. That is not a bug — it means the deal has to come from price or terms, not from the market. If everything reads NO-GO, the question is whether the standard fits the situation, not whether the tool is working.
 
 ---
 
@@ -99,6 +109,14 @@ On a mid-priced house, taxes and insurance together can run 35–40% of effectiv
 Static hosting, no configuration needed. The page is a single `index.html` with no external dependencies.
 
 This repo is public, which means the URL is public. The file includes a `noindex` meta tag so search engines skip it, but that is not access control. Anyone with the link can open it. Since the tool ships with placeholder numbers and computes entirely in the browser, that exposes the model — not any deal.
+
+---
+
+## BRRRR notes
+
+The refinance loan is sized on **after-repair value, not on cost**, which is why a rehab overrun hits twice: more cash in, and no more loan out. The tool shows both the 10%-low-appraisal case and the 20%-overrun case, because those are the two things that actually kill these deals.
+
+Two assumptions to confirm in writing before relying on the output: the **appraisal**, which the whole structure rests on, and the lender's **seasoning requirement** — many will not refinance at ARV for six to twelve months, and the carry cost in the model only runs for the rehab months you enter.
 
 ---
 
