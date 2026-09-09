@@ -325,11 +325,21 @@ function calcReturns(doorsArr,port,gg){
   var apprec=value-port.price;
   var sellCost=value*gg.sellCostPct;
   var netSale=value-sellCost-bal;
-  flows[flows.length-1]+=netSale;
-  var profit=cumCF+netSale-port.cashIn;
-  var mult=port.cashIn>0?(cumCF+netSale)/port.cashIn:0;
+  /* Held reserves are your cash sitting in an account, not a cost. They come
+     back when you sell. Closing and make-ready are genuinely spent and do not. */
+  var reservesBack=port.reserveHold;
+  var sunk=port.closing+port.makeReady;
+  var cashBack=netSale+reservesBack;
+  flows[flows.length-1]+=cashBack;
+  var profit=cumCF+cashBack-port.cashIn;
+  var mult=port.cashIn>0?(cumCF+cashBack)/port.cashIn:0;
+  /* This bridge reconciles exactly, by construction:
+     cumCF + apprec + paydown - sellCost - sunk === profit
+     because netSale = down + apprec + paydown - sellCost, and
+     cashIn = down + closing + makeReady + reserves. */
   return {years:t, cumCF:cumCF, value:value, bal:bal, paydown:paydown, apprec:apprec,
-    sellCost:sellCost, netSale:netSale, profit:profit, mult:mult,
+    sellCost:sellCost, netSale:netSale, reservesBack:reservesBack, sunk:sunk,
+    cashBack:cashBack, profit:profit, mult:mult,
     irr:irr(flows), flows:flows};
 }
 /* IRR by bisection on NPV. Returns null when the sign never flips. */
@@ -564,28 +574,35 @@ function render(){
       row('Cap rate',pc(port.capRate))+
     '</div>';
 
+  document.getElementById('retTitle').textContent =
+    'What this deal makes over '+ret.years+' year'+(ret.years===1?'':'s');
   document.getElementById('retOut').innerHTML =
     '<div>'+
-      row('Cash flow over '+ret.years+' yr',usd(ret.cumCF))+
-      row('Principal paydown',usd(ret.paydown))+
+      row('Rent, after every expense and reserve',usd(ret.cumCF))+
       row('Appreciation',usd(ret.apprec))+
-      row('Selling costs',usd(-ret.sellCost),{i:1})+
-      row('Net sale proceeds',usd(ret.netSale),{b:1})+
+      row('Loan paid down by rent',usd(ret.paydown))+
+      row('Selling costs at '+pc(g.sellCostPct,0),usd(-ret.sellCost))+
+      row('Closing and make-ready, not recovered',usd(-ret.sunk))+
+      row('TOTAL PROFIT',usd(ret.profit),{b:1,tone:ret.profit>=0?'pass':'fail'})+
     '</div><div>'+
-      row('Cash invested',usd(port.cashIn))+
-      row('Total profit',usd(ret.profit),{b:1,tone:ret.profit>=0?'pass':'fail'})+
-      row('Equity multiple',mx(ret.mult),{b:1})+
+      row('Cash you put in',usd(port.cashIn))+
+      row('Cash back at sale',usd(ret.cashBack),{i:1})+
+      row('Profit on top of that',usd(ret.profit),{b:1,tone:ret.profit>=0?'pass':'fail'})+
+      '<div style="height:12px"></div>'+
+      row('Every dollar in comes back as',mx(ret.mult),{b:1})+
       row('IRR',ret.irr!==null?pc(ret.irr):'—',{b:1,tone:ret.irr!==null&&ret.irr>=0.10?'pass':'warn'})+
       row('Sale price in year '+ret.years,usd(ret.value))+
       row('Loan balance then',usd(ret.bal))+
     '</div>';
-  var driver = ret.cumCF+ret.paydown+ret.apprec;
-  document.getElementById('retNote').innerHTML = driver<=0 ? '' :
-    'Of the gross gain, '+pc(ret.cumCF/driver,0)+' is cash flow, '+pc(ret.paydown/driver,0)+
-    ' is your tenant paying down principal, and '+pc(ret.apprec/driver,0)+' is appreciation — '+
-    'the one line you do not control. Selling costs take '+usd(ret.sellCost)+' off the top. '+
-    (ret.apprec/driver>0.4 ? 'Appreciation is carrying too much of this thesis. Set it to zero and see whether the deal still stands.'
-                           : 'The return rests mostly on things you control, which is where you want it.');
+  var gross = ret.cumCF+ret.apprec+ret.paydown;
+  document.getElementById('retNote').innerHTML = gross<=0 ? '' :
+    'The five lines on the left add to the profit — nothing is counted twice. '+
+    'Of what the deal <em>creates</em> ('+usd(gross)+' before costs), '+
+    pc(ret.cumCF/gross,0)+' is rent, '+pc(ret.apprec/gross,0)+' is appreciation, and '+
+    pc(ret.paydown/gross,0)+' is your tenant paying down the loan. Costs of buying and selling take '+
+    usd(ret.sellCost+ret.sunk)+' of it back. '+
+    (ret.apprec/gross>0.4 ? '<strong>Appreciation is carrying too much of this thesis.</strong> Set it to zero and see whether the deal still stands.'
+                          : 'The return rests mostly on things you control, which is where you want it.');
 
   renderSolve(port);
   renderBrrrr();
